@@ -1,0 +1,41 @@
+# Runs the whole system with nothing installed on the host except Docker —
+# no local PostgreSQL, no local Node needed either. Matches the deployment
+# model in CLAUDE.md (one server, LAN access): `docker compose up -d` on
+# the office server/mini-PC, staff reach it via that machine's IP:3000.
+#
+# Override POSTGRES_PASSWORD before any real/production use — the default
+# below is a dev-only placeholder, not meant to be reused as-is.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: notary_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_dev_only}
+      POSTGRES_DB: notary_financial_control
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notary_app -d notary_financial_control"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://notary_app:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/notary_financial_control?schema=public
+      ATTACHMENTS_DIR: /app/attachments
+    ports:
+      - "3000:3000"
+    volumes:
+      - attachments_data:/app/attachments
+
+volumes:
+  db_data:
+  attachments_data:

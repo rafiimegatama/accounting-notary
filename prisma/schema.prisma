@@ -1,0 +1,252 @@
+// ================================================================
+// Prisma schema — mirrors ddl_notary_financial_control.sql exactly.
+// CHECK constraints and triggers (immutability, no-delete, updated_at)
+// are NOT expressible in Prisma schema — they live in the DDL and are
+// applied via the initial migration's raw SQL (see prisma/migrations
+// README). Valid string values for "enum-like" fields are documented
+// per field here; the authoritative constraint is the DB CHECK in the DDL.
+// ================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name           String
+  clientType     String?  @map("client_type") // INDIVIDUAL | COMPANY
+  contactPhone   String?  @map("contact_phone")
+  contactEmail   String?  @map("contact_email")
+  contactAddress String?  @map("contact_address")
+  identityNumber String?  @map("identity_number")
+  status         String   @default("ACTIVE") // ACTIVE | INACTIVE
+  notes          String?
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  matters      Matter[]
+  transactions FinancialTransaction[]
+  attachments  FinancialAttachment[]
+
+  @@map("client")
+}
+
+model Matter {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId          String   @map("client_id") @db.Uuid
+  matterName        String   @map("matter_name")
+  matterType        String?  @map("matter_type")
+  service           String?
+  status            String   @default("ACTIVE") // ACTIVE | CLOSED | CANCELLED
+  responsibleStaff  String?  @map("responsible_staff")
+  notes             String?
+  createdBy         String   @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @map("updated_at")
+
+  client       Client                  @relation(fields: [clientId], references: [id])
+  invoices     Invoice[]
+  costDetails  CostDetail[]
+  transactions FinancialTransaction[]
+  attachments  FinancialAttachment[]
+
+  @@index([clientId, status])
+  @@map("matter")
+}
+
+model Invoice {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matterId             String   @map("matter_id") @db.Uuid
+  invoiceNumber        String   @unique @map("invoice_number")
+  invoiceDate          DateTime @map("invoice_date") @db.Date
+  dueDate              DateTime? @map("due_date") @db.Date
+  totalAmount          Decimal  @map("total_amount") @db.Decimal(18, 2)
+  allowPartialPayment  Boolean  @default(true) @map("allow_partial_payment")
+  status               String   @default("ISSUED") // DRAFT | ISSUED | VOID
+  notes                String?
+  createdBy            String   @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @map("updated_at")
+
+  matter       Matter               @relation(fields: [matterId], references: [id])
+  costDetails  CostDetail[]
+  allocations  PaymentAllocation[]
+  attachments  FinancialAttachment[]
+
+  @@index([matterId, status])
+  @@map("invoice")
+}
+
+model CostDetail {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matterId        String   @map("matter_id") @db.Uuid
+  invoiceId       String?  @map("invoice_id") @db.Uuid
+  costDate        DateTime @map("cost_date") @db.Date
+  description     String
+  category        String?
+  amount          Decimal  @db.Decimal(18, 2)
+  sourceType      String   @default("MANUAL") @map("source_type")
+  sourceReference String?  @map("source_reference")
+  status          String   @default("ACTIVE") // ACTIVE | VOID
+  notes           String?
+  createdBy       String   @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  matter      Matter                @relation(fields: [matterId], references: [id])
+  invoice     Invoice?              @relation(fields: [invoiceId], references: [id])
+  attachments FinancialAttachment[]
+
+  @@index([matterId, status])
+  @@index([invoiceId])
+  @@map("cost_detail")
+}
+
+model FinancialTransaction {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionDate   DateTime @map("transaction_date") @db.Date
+  amount            Decimal  @db.Decimal(18, 2)
+  direction         String   // IN | OUT
+  description       String
+  financialType     String   @default("UNCLASSIFIED") @map("financial_type") // UNCLASSIFIED | PAYMENT | DEPOSIT | DISBURSEMENT | OTHER
+  clientId          String?  @map("client_id") @db.Uuid
+  matterId          String?  @map("matter_id") @db.Uuid
+  sourceType        String   @default("SOURCE_PENDING") @map("source_type")
+  sourceReference   String?  @map("source_reference")
+  reviewStatus      String   @default("NORMAL") @map("review_status") // NORMAL | WARNING | REVIEW_REQUIRED
+  status            String   @default("ACTIVE") // ACTIVE | VOIDED
+  voidedAt          DateTime? @map("voided_at")
+  voidedBy          String?  @map("voided_by")
+  voidReason        String?  @map("void_reason")
+  notes             String?
+  createdBy         String   @map("created_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @map("updated_at")
+
+  client      Client?               @relation(fields: [clientId], references: [id])
+  matter      Matter?               @relation(fields: [matterId], references: [id])
+  payment     Payment?
+  deposit     Deposit?
+  disbursement Disbursement?
+  attachments FinancialAttachment[]
+
+  @@index([matterId, status])
+  @@index([clientId, status])
+  @@index([transactionDate])
+  @@map("financial_transaction")
+}
+
+model Payment {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  financialTransactionId String   @unique @map("financial_transaction_id") @db.Uuid
+  notes                  String?
+  createdBy              String   @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @default(now()) @map("updated_at")
+
+  transaction FinancialTransaction @relation(fields: [financialTransactionId], references: [id])
+  allocations PaymentAllocation[]
+
+  @@map("payment")
+}
+
+model Deposit {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  financialTransactionId String   @unique @map("financial_transaction_id") @db.Uuid
+  notes                  String?
+  createdBy              String   @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @default(now()) @map("updated_at")
+
+  transaction FinancialTransaction @relation(fields: [financialTransactionId], references: [id])
+
+  @@map("deposit")
+}
+
+model Disbursement {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  financialTransactionId String   @unique @map("financial_transaction_id") @db.Uuid
+  category               String?
+  notes                  String?
+  createdBy              String   @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @default(now()) @map("updated_at")
+
+  transaction FinancialTransaction @relation(fields: [financialTransactionId], references: [id])
+
+  @@map("disbursement")
+}
+
+model PaymentAllocation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentId       String    @map("payment_id") @db.Uuid
+  invoiceId       String?   @map("invoice_id") @db.Uuid
+  allocationType  String    @map("allocation_type") // INVOICE_PAYMENT | DEPOSIT_TOPUP | OTHER
+  amount          Decimal   @db.Decimal(18, 2)
+  status          String    @default("ACTIVE") // ACTIVE | REVERSED
+  reversedAt      DateTime? @map("reversed_at")
+  reversedBy      String?   @map("reversed_by")
+  reversalReason  String?   @map("reversal_reason")
+  notes           String?
+  createdBy       String    @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  payment Payment  @relation(fields: [paymentId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId, status])
+  @@index([paymentId, status])
+  @@map("payment_allocation")
+}
+
+model FinancialAttachment {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  filePath      String   @map("file_path")
+  fileName      String   @map("file_name")
+  fileType      String?  @map("file_type")
+  clientId      String?  @map("client_id") @db.Uuid
+  matterId      String?  @map("matter_id") @db.Uuid
+  transactionId String?  @map("transaction_id") @db.Uuid
+  costDetailId  String?  @map("cost_detail_id") @db.Uuid
+  invoiceId     String?  @map("invoice_id") @db.Uuid
+  uploadedBy    String   @map("uploaded_by")
+  uploadedAt    DateTime @default(now()) @map("uploaded_at")
+
+  client      Client?               @relation(fields: [clientId], references: [id])
+  matter      Matter?               @relation(fields: [matterId], references: [id])
+  transaction FinancialTransaction? @relation(fields: [transactionId], references: [id])
+  costDetail  CostDetail?           @relation(fields: [costDetailId], references: [id])
+  invoice     Invoice?              @relation(fields: [invoiceId], references: [id])
+
+  @@map("financial_attachment")
+}
+
+model AuditLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType    String   @map("entity_type")
+  entityId      String   @map("entity_id") @db.Uuid
+  action        String
+  userId        String   @map("user_id")
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+  previousValue Json?    @map("previous_value")
+  newValue      Json?    @map("new_value")
+  reason        String?
+
+  @@index([entityType, entityId, occurredAt])
+  @@map("audit_log")
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedBy String   @map("updated_by")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("system_setting")
+}
