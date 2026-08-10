@@ -11,6 +11,7 @@ import { assertOneOf, FINANCIAL_TYPES, SOURCE_TYPES, TRANSACTION_DIRECTIONS } fr
 //   ?clientId=... / ?matterId=... -> scoped listing
 export async function GET(request: Request) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId") ?? undefined;
     const matterId = searchParams.get("matterId") ?? undefined;

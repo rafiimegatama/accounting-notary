@@ -10,6 +10,7 @@ import { assertOneOf, SOURCE_TYPES } from "@/lib/enums";
 // scoping filters, not requirements.
 export async function GET(request: Request) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const matterId = searchParams.get("matterId") ?? undefined;
     const invoiceId = searchParams.get("invoiceId") ?? undefined;

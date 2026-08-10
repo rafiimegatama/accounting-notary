@@ -3,8 +3,9 @@ import { apiSuccess, withApiHandler, ApiError } from "@/lib/apiResponse";
 import { getCurrentUser } from "@/lib/currentUser";
 import { writeAuditLog } from "@/lib/audit";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const client = await prisma.client.findUnique({ where: { id: params.id }, include: { matters: true } });
     if (!client) throw new ApiError("NOT_FOUND", "Client tidak ditemukan.", 404);
     return apiSuccess(client);

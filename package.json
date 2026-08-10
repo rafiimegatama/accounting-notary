@@ -10,18 +10,28 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "pretest": "sh scripts/reset-test-db.sh",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed:demo": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
+    "lucide-react": "^1.31.0",
     "next": "^14.2.5",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
+    "autoprefixer": "^10.5.4",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "postcss": "^8.5.26",
     "prisma": "^5.20.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.12",
     "typescript": "^5.5.4",
     "vitest": "^4.1.10"
   }

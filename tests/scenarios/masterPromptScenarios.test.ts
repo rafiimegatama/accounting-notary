@@ -224,6 +224,54 @@ describe("Scenario 9 — satu payment dialokasikan ke beberapa invoice", () => {
   });
 });
 
+describe("Section 36 checklist #12 — overpayment triggers REVIEW_REQUIRED", () => {
+  it("allocating more than an invoice's total_amount flags the transaction, never blocks the allocation", async () => {
+    const client = await makeClient("Overpayment Client");
+    const matter = await makeMatter(client.id, "Overpayment Matter");
+    const invoice = await call(createInvoice, {
+      method: "POST",
+      body: { matterId: matter.id, invoiceNumber: `INV-OVERPAY-${Date.now()}`, invoiceDate: "2026-08-01", totalAmount: 5000000, allowPartialPayment: true },
+    });
+    const txn = await call(createTransaction, {
+      method: "POST",
+      body: { transactionDate: "2026-08-01", amount: 8000000, direction: "IN", matterId: matter.id, description: "Overpayment scenario" },
+    });
+    const payment = await call(classifyTransaction, { method: "POST", body: { financialType: "PAYMENT" }, params: { id: txn.json.data.id } });
+
+    const allocation = await call(allocatePayment, {
+      method: "POST",
+      body: { invoiceId: invoice.json.data.id, allocationType: "INVOICE_PAYMENT", amount: 8000000 },
+      params: { id: payment.json.data.id },
+    });
+    // Never blocked — the allocation itself succeeds (Principle 3: advisory only).
+    expect(allocation.status).toBe(201);
+
+    const trace = await call(getTrace, { params: { entryId: txn.json.data.id }, query: { entryType: "TRANSACTION" } });
+    expect(trace.json.data[0].currentStatus.reviewStatus).toBe("REVIEW_REQUIRED");
+  });
+});
+
+describe("Section 36 checklist #14 — disbursement", () => {
+  it("classifying an OUT transaction as DISBURSEMENT reflects in Matter Position", async () => {
+    const client = await makeClient("Disbursement Client");
+    const matter = await makeMatter(client.id, "Disbursement Matter");
+    const txn = await call(createTransaction, {
+      method: "POST",
+      body: { transactionDate: "2026-08-01", amount: 4500000, direction: "OUT", matterId: matter.id, description: "Pembayaran BPHTB" },
+    });
+    const disbursement = await call(classifyTransaction, {
+      method: "POST",
+      body: { financialType: "DISBURSEMENT", category: "BPHTB" },
+      params: { id: txn.json.data.id },
+    });
+    expect(disbursement.status).toBe(201);
+
+    const pos = await call(getMatterPosition, { params: { id: matter.id } });
+    expect(pos.json.data.summary.disbursementTotal).toBe("4500000");
+    expect(pos.json.data.detail.disbursements.some((d: { transactionId: string }) => d.transactionId === txn.json.data.id)).toBe(true);
+  });
+});
+
 describe("Scenario 10 — mencari transaksi lama", () => {
   it("Search → Transaction → Timeline", async () => {
     const uniqueDescription = `Pelunasan Akta Rumah Scenario10 ${Date.now()}`;

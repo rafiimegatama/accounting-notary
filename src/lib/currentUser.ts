@@ -1,17 +1,32 @@
 import { ApiError } from "./apiResponse";
+import { COOKIE_NAME, verifySessionCookieValue } from "./session";
 
-// DESIGN ASSUMPTION (flagged, needs validation — see Step 13 notes):
-// there is no authentication system in this MVP. "Current user" is a
-// staff-chosen identifier sent by the frontend, used ONLY to populate
-// created_by / user_id on audit trail records. It is identification,
-// not access control — anyone with network access to the app can send
-// any name. Building real auth was out of scope because discovery never
-// surfaced a security/access-control pain point; if that changes, this
-// is the single place to replace with a real session mechanism.
-export function getCurrentUser(request: Request): string {
-  const staffName = request.headers.get("x-staff-name");
-  if (!staffName || staffName.trim().length === 0) {
-    throw new ApiError("STAFF_IDENTITY_MISSING", "Header x-staff-name wajib diisi (identifikasi staf untuk audit trail).", 401);
+// Reads the verified, server-signed session cookie — replaces the old
+// spoofable `x-staff-name` header (flagged as a known gap since Step 13;
+// closed here per Section 43: "Frontend hiding buttons is NOT authorization").
+// Any mutation route calling this now requires a real login, not just a
+// client-typed name.
+function parseCookie(header: string | null, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === name) return decodeURIComponent(v.join("="));
   }
-  return staffName.trim();
+  return undefined;
+}
+
+export function getCurrentUser(request: Request): string {
+  const cookieHeader = request.headers.get("cookie");
+  const raw = parseCookie(cookieHeader, COOKIE_NAME);
+  const session = verifySessionCookieValue(raw);
+  if (!session) {
+    throw new ApiError("UNAUTHENTICATED", "Sesi tidak valid atau sudah berakhir. Silakan login kembali.", 401);
+  }
+  return session.staffName;
+}
+
+export function getCurrentSession(request: Request) {
+  const cookieHeader = request.headers.get("cookie");
+  const raw = parseCookie(cookieHeader, COOKIE_NAME);
+  return verifySessionCookieValue(raw);
 }

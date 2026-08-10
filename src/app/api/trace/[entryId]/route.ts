@@ -1,4 +1,5 @@
 import { apiSuccess, withApiHandler, ApiError } from "@/lib/apiResponse";
+import { getCurrentUser } from "@/lib/currentUser";
 import { buildTransactionTrace, resolveTransactionIds, TraceEntryType } from "@/lib/trace";
 
 const VALID_ENTRY_TYPES: TraceEntryType[] = ["TRANSACTION", "PAYMENT", "INVOICE", "COST_DETAIL"];
@@ -9,6 +10,7 @@ const VALID_ENTRY_TYPES: TraceEntryType[] = ["TRANSACTION", "PAYMENT", "INVOICE"
 // than one underlying transaction (an invoice paid across several payments).
 export async function GET(request: Request, { params }: { params: { entryId: string } }) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const entryType = (searchParams.get("entryType") ?? "TRANSACTION") as TraceEntryType;
     if (!VALID_ENTRY_TYPES.includes(entryType)) {

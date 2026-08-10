@@ -1,10 +1,13 @@
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/formatCurrency";
+import { describeTimelineEvent } from "@/lib/timelineLabel";
+import { Card, CardHeader, CardBody } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ReviewStatusBadge, PaymentStatusBadge, GenericStatusBadge } from "@/components/ui/StatusBadge";
 
-// Step 15 — Financial Position UI. Server component (no client JS needed):
+// Step 15 (rebuilt Section 40 "signature screen"). Server component:
 // "every summary value must be clickable" is satisfied with plain anchor
-// links (<a href="#section">) into detail tables that are already rendered
-// on the same page — no fetch-on-click, no hidden data, nothing hidden
-// behind an interaction the user has to discover.
+// links (<a href="#section">) into detail cards already rendered on the
+// same page — no fetch-on-click, no hidden data.
 
 type Money = { toString(): string };
 
@@ -14,7 +17,7 @@ type PaymentRow = { transactionId: string; date: Date; amount: Money; allocated:
 type DepositRow = { transactionId: string; date: Date; amount: Money };
 type DisbursementRow = { transactionId: string; date: Date; amount: Money; category: string | null };
 type AttachmentRow = { id: string; fileName: string; fileType: string | null; uploadedAt: Date };
-type HistoryRow = { id: string; entityType: string; action: string; userId: string; occurredAt: Date; reason: string | null };
+type HistoryRow = { id: string; entityType: string; action: string; userId: string; occurredAt: Date; reason: string | null; newValue: unknown };
 type MatterSummaryRow = { matterId: string; matterName: string; status: string; summary: Record<string, Money> };
 
 export interface FinancialPositionViewProps {
@@ -33,11 +36,6 @@ export interface FinancialPositionViewProps {
     depositRemaining: Money;
     disbursementTotal: Money;
   };
-  // Optional: for CLIENT scope these are omitted (undefined) rather than
-  // passed as incomplete arrays — cost detail/invoice only exist per-matter
-  // in the schema, so a client-level list would either be misleadingly
-  // partial or require merging every matter's rows. Per-Matter Breakdown
-  // is the correct drill-down for client-level Total Cost/Invoice/Outstanding.
   costDetails?: CostDetailRow[];
   invoices?: InvoiceRow[];
   payments: PaymentRow[];
@@ -45,15 +43,16 @@ export interface FinancialPositionViewProps {
   disbursements: DisbursementRow[];
   attachments: AttachmentRow[];
   history: HistoryRow[];
-  matterBreakdown?: MatterSummaryRow[]; // CLIENT scope only — Scenario 4/5: per-matter split
+  matterBreakdown?: MatterSummaryRow[];
   linkHref: (kind: "matter" | "transaction", id: string) => string;
+  actions?: React.ReactNode;
 }
 
-function SummaryCard({ label, value, href }: { label: string; value: Money; href: string }) {
+function SummaryStat({ label, value, href }: { label: string; value: Money; href: string }) {
   return (
-    <a href={href} style={{ display: "block", border: "1px solid #ddd", borderRadius: 8, padding: "12px 16px", textDecoration: "none", color: "inherit" }}>
-      <div style={{ fontSize: 12, opacity: 0.7 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 600 }}>{formatCurrency(value)}</div>
+    <a href={href} className="rounded-control border border-border bg-white px-4 py-3 transition-colors hover:border-primary/50">
+      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-text">{formatCurrency(value)}</div>
     </a>
   );
 }
@@ -61,225 +60,235 @@ function SummaryCard({ label, value, href }: { label: string; value: Money; href
 export function FinancialPositionView(props: FinancialPositionViewProps) {
   const { summary } = props;
   const costInvoiceHref = props.scope === "CLIENT" ? "#matter-breakdown" : undefined;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* HEADER */}
-      <header>
-        <h1 style={{ marginBottom: 4 }}>{props.title}</h1>
-        {props.subtitle && <div style={{ opacity: 0.7 }}>{props.subtitle}</div>}
-        <span style={{ display: "inline-block", marginTop: 4, padding: "2px 8px", borderRadius: 4, background: "#eee", fontSize: 12 }}>
-          {props.status}
-        </span>
-      </header>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text">{props.title}</h1>
+          {props.subtitle && <p className="text-sm text-muted">{props.subtitle}</p>}
+          <div className="mt-2"><GenericStatusBadge status={props.status} /></div>
+        </div>
+        {props.actions && <div className="flex gap-2">{props.actions}</div>}
+      </div>
 
-      {/* SUMMARY — every value clickable, links to the detail section that explains it */}
-      <section aria-label="Financial Summary" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Total Cost" value={summary.totalCost} href={costInvoiceHref ?? "#cost-detail"} />
-        <SummaryCard label="Total Invoice" value={summary.totalInvoice} href={costInvoiceHref ?? "#invoices"} />
-        <SummaryCard label="Total Payment" value={summary.totalPayment} href="#payments" />
-        <SummaryCard label="Outstanding" value={summary.outstanding} href={costInvoiceHref ?? "#invoices"} />
-        <SummaryCard label="Unallocated Amount" value={summary.unallocatedAmount} href="#payments" />
-        <SummaryCard label="Deposit Received" value={summary.depositReceived} href="#deposits" />
-        <SummaryCard label="Deposit Used" value={summary.depositUsed} href="#disbursements" />
-        <SummaryCard label="Deposit Remaining" value={summary.depositRemaining} href="#deposits" />
-      </section>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <SummaryStat label="Total Cost" value={summary.totalCost} href={costInvoiceHref ?? "#cost-detail"} />
+        <SummaryStat label="Total Invoice" value={summary.totalInvoice} href={costInvoiceHref ?? "#invoices"} />
+        <SummaryStat label="Total Payment" value={summary.totalPayment} href="#payments" />
+        <SummaryStat label="Outstanding" value={summary.outstanding} href={costInvoiceHref ?? "#invoices"} />
+        <SummaryStat label="Unallocated" value={summary.unallocatedAmount} href="#payments" />
+        <SummaryStat label="Deposit Received" value={summary.depositReceived} href="#deposits" />
+        <SummaryStat label="Deposit Used" value={summary.depositUsed} href="#disbursements" />
+        <SummaryStat label="Deposit Remaining" value={summary.depositRemaining} href="#deposits" />
+      </div>
 
-      {/* Client scope only: per-matter breakdown, Scenario 4/5 */}
       {props.matterBreakdown && (
-        <section id="matter-breakdown" aria-label="Per-Matter Breakdown">
-          <h2>Per Matter</h2>
-          <p style={{ fontSize: 12, opacity: 0.6 }}>
-            Drill-down untuk Total Cost, Total Invoice, dan Outstanding tingkat client — klik matter untuk rincian penuh.
-          </p>
-          <table width="100%" cellPadding={6}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                <th>Matter</th><th>Status</th><th>Outstanding</th><th>Deposit Remaining</th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.matterBreakdown.map((m) => (
-                <tr key={m.matterId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <td><a href={props.linkHref("matter", m.matterId)}>{m.matterName}</a></td>
-                  <td>{m.status}</td>
-                  <td>{formatCurrency(m.summary.outstanding)}</td>
-                  <td>{formatCurrency(m.summary.depositRemaining)}</td>
+        <Card id="matter-breakdown">
+          <CardHeader>
+            <h2 className="text-sm font-semibold text-text">Per Matter</h2>
+            <p className="mt-0.5 text-xs text-muted">Drill-down Total Cost/Invoice/Outstanding tingkat client — klik matter untuk rincian penuh.</p>
+          </CardHeader>
+          <CardBody className="p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-medium text-muted">
+                  <th className="px-5 py-2.5">Matter</th><th className="px-5 py-2.5">Status</th><th className="px-5 py-2.5 text-right">Outstanding</th><th className="px-5 py-2.5 text-right">Deposit Remaining</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {props.matterBreakdown.map((m) => (
+                  <tr key={m.matterId} className="border-b border-border last:border-0 hover:bg-bg">
+                    <td className="px-5 py-2.5"><a href={props.linkHref("matter", m.matterId)} className="font-medium text-text hover:text-primary">{m.matterName}</a></td>
+                    <td className="px-5 py-2.5"><GenericStatusBadge status={m.status} /></td>
+                    <td className="px-5 py-2.5 text-right">{formatCurrency(m.summary.outstanding)}</td>
+                    <td className="px-5 py-2.5 text-right">{formatCurrency(m.summary.depositRemaining)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardBody>
+        </Card>
       )}
 
-      {/* DETAIL: Cost Detail — MATTER scope only, see costDetails prop note */}
       {props.costDetails && (
-        <section id="cost-detail" aria-label="Cost Detail">
-          <h2>Cost Detail</h2>
-          {props.costDetails.length === 0 ? (
-            <p style={{ opacity: 0.6 }}>Belum ada rincian biaya.</p>
-          ) : (
-            <table width="100%" cellPadding={6}>
-              <thead>
-                <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                  <th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th>Source</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {props.costDetails.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                    <td>{formatDate(c.costDate)}</td>
-                    <td>{c.description}</td>
-                    <td>{c.category ?? "-"}</td>
-                    <td>{formatCurrency(c.amount)}</td>
-                    <td>{c.sourceType}</td>
-                    <td>{c.status}</td>
+        <Card id="cost-detail">
+          <CardHeader><h2 className="text-sm font-semibold text-text">Cost Detail</h2></CardHeader>
+          <CardBody className="p-0">
+            {props.costDetails.length === 0 ? (
+              <EmptyState title="Belum ada rincian biaya" />
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs font-medium text-muted">
+                    <th className="px-5 py-2.5">Date</th><th className="px-5 py-2.5">Description</th><th className="px-5 py-2.5">Category</th><th className="px-5 py-2.5 text-right">Amount</th><th className="px-5 py-2.5">Source</th><th className="px-5 py-2.5">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
+                </thead>
+                <tbody>
+                  {props.costDetails.map((c) => (
+                    <tr key={c.id} className="border-b border-border last:border-0 hover:bg-bg">
+                      <td className="px-5 py-2.5">{formatDate(c.costDate)}</td>
+                      <td className="px-5 py-2.5">{c.description}</td>
+                      <td className="px-5 py-2.5 text-muted">{c.category ?? "-"}</td>
+                      <td className="px-5 py-2.5 text-right">{formatCurrency(c.amount)}</td>
+                      <td className="px-5 py-2.5 text-muted">{c.sourceType}</td>
+                      <td className="px-5 py-2.5"><GenericStatusBadge status={c.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardBody>
+        </Card>
       )}
 
-      {/* DETAIL: Invoices — the Outstanding drill-down (master prompt's own example). MATTER scope only. */}
       {props.invoices && (
-        <section id="invoices" aria-label="Invoices">
-          <h2>Invoice</h2>
-          {props.invoices.length === 0 ? (
-            <p style={{ opacity: 0.6 }}>Belum ada invoice.</p>
+        <Card id="invoices">
+          <CardHeader><h2 className="text-sm font-semibold text-text">Invoice</h2></CardHeader>
+          <CardBody className="p-0">
+            {props.invoices.length === 0 ? (
+              <EmptyState title="Belum ada invoice" />
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs font-medium text-muted">
+                    <th className="px-5 py-2.5">Invoice</th><th className="px-5 py-2.5 text-right">Total</th><th className="px-5 py-2.5 text-right">Allocated</th><th className="px-5 py-2.5 text-right">Outstanding</th><th className="px-5 py-2.5">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {props.invoices.map((inv) => (
+                    <tr key={inv.invoiceId} className="border-b border-border last:border-0 hover:bg-bg">
+                      <td className="px-5 py-2.5"><a href={`/invoices/${inv.invoiceId}`} className="font-medium text-text hover:text-primary">{inv.invoiceNumber}</a></td>
+                      <td className="px-5 py-2.5 text-right">{formatCurrency(inv.totalAmount)}</td>
+                      <td className="px-5 py-2.5 text-right">{formatCurrency(inv.allocated)}</td>
+                      <td className="px-5 py-2.5 text-right font-medium">{formatCurrency(inv.outstanding)}</td>
+                      <td className="px-5 py-2.5"><PaymentStatusBadge status={inv.paymentStatus as "UNPAID" | "PARTIALLY_PAID" | "PAID" | "OVERPAID"} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      <Card id="payments">
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-text">Payment{props.scope === "CLIENT" ? " (belum ter-assign ke matter)" : ""}</h2>
+          {props.scope === "CLIENT" && <p className="mt-0.5 text-xs text-muted">Payment yang sudah ter-assign ke matter ada di halaman matter masing-masing.</p>}
+        </CardHeader>
+        <CardBody className="p-0">
+          {props.payments.length === 0 ? (
+            <EmptyState title="Belum ada payment" />
           ) : (
-            <table width="100%" cellPadding={6}>
+            <table className="w-full text-sm">
               <thead>
-                <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                  <th>Invoice</th><th>Total</th><th>Allocated</th><th>Outstanding</th><th>Status</th>
+                <tr className="border-b border-border text-left text-xs font-medium text-muted">
+                  <th className="px-5 py-2.5">Date</th><th className="px-5 py-2.5 text-right">Amount</th><th className="px-5 py-2.5 text-right">Allocated</th><th className="px-5 py-2.5 text-right">Unallocated</th><th className="px-5 py-2.5">Status</th><th className="px-5 py-2.5"></th>
                 </tr>
               </thead>
               <tbody>
-                {props.invoices.map((inv) => (
-                  <tr key={inv.invoiceId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                    <td>{inv.invoiceNumber}</td>
-                    <td>{formatCurrency(inv.totalAmount)}</td>
-                    <td>{formatCurrency(inv.allocated)}</td>
-                    <td>{formatCurrency(inv.outstanding)}</td>
-                    <td>{inv.paymentStatus}</td>
+                {props.payments.map((p) => (
+                  <tr key={p.transactionId} className="border-b border-border last:border-0 hover:bg-bg">
+                    <td className="px-5 py-2.5">{formatDate(p.date)}</td>
+                    <td className="px-5 py-2.5 text-right">{formatCurrency(p.amount)}</td>
+                    <td className="px-5 py-2.5 text-right">{formatCurrency(p.allocated)}</td>
+                    <td className="px-5 py-2.5 text-right">{formatCurrency(p.unallocated)}</td>
+                    <td className="px-5 py-2.5"><ReviewStatusBadge status={p.reviewStatus as "NORMAL" | "WARNING" | "REVIEW_REQUIRED"} /></td>
+                    <td className="px-5 py-2.5"><a href={props.linkHref("transaction", p.transactionId)} className="text-primary hover:underline">Trace →</a></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-        </section>
-      )}
+        </CardBody>
+      </Card>
 
-      {/* DETAIL: Payments + Allocations — the Unallocated Amount drill-down */}
-      <section id="payments" aria-label="Payments">
-        <h2>Payment{props.scope === "CLIENT" ? " (belum ter-assign ke matter)" : ""}</h2>
-        {props.scope === "CLIENT" && (
-          <p style={{ fontSize: 12, opacity: 0.6 }}>
-            Payment yang sudah ter-assign ke matter tertentu ada di halaman matter masing-masing (lihat Per Matter di atas).
+      <Card id="deposits">
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-text">Deposit / Funds</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Received {formatCurrency(summary.depositReceived)} · Used {formatCurrency(summary.depositUsed)} · Remaining {formatCurrency(summary.depositRemaining)}
           </p>
-        )}
-        {props.payments.length === 0 ? (
-          <p style={{ opacity: 0.6 }}>Belum ada payment.</p>
-        ) : (
-          <table width="100%" cellPadding={6}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                <th>Date</th><th>Amount</th><th>Allocated</th><th>Unallocated</th><th>Status</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.payments.map((p) => (
-                <tr key={p.transactionId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <td>{formatDate(p.date)}</td>
-                  <td>{formatCurrency(p.amount)}</td>
-                  <td>{formatCurrency(p.allocated)}</td>
-                  <td>{formatCurrency(p.unallocated)}</td>
-                  <td>{p.reviewStatus !== "NORMAL" && <span style={{ background: "#fde68a", padding: "1px 6px", borderRadius: 4, fontSize: 12 }}>{p.reviewStatus}</span>}</td>
-                  <td><a href={props.linkHref("transaction", p.transactionId)}>Trace →</a></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+        </CardHeader>
+        <CardBody className="p-0">
+          {props.deposits.length === 0 ? (
+            <EmptyState title="Belum ada deposit" />
+          ) : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-border text-left text-xs font-medium text-muted"><th className="px-5 py-2.5">Date</th><th className="px-5 py-2.5 text-right">Amount</th></tr></thead>
+              <tbody>
+                {props.deposits.map((d) => (
+                  <tr key={d.transactionId} className="border-b border-border last:border-0 hover:bg-bg">
+                    <td className="px-5 py-2.5">{formatDate(d.date)}</td><td className="px-5 py-2.5 text-right">{formatCurrency(d.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardBody>
+      </Card>
 
-      {/* DETAIL: Deposit / Funds */}
-      <section id="deposits" aria-label="Deposit">
-        <h2>Deposit / Funds</h2>
-        <p>Received {formatCurrency(summary.depositReceived)} · Used {formatCurrency(summary.depositUsed)} · Remaining {formatCurrency(summary.depositRemaining)}</p>
-        {props.scope === "CLIENT" && (
-          <p style={{ fontSize: 12, opacity: 0.6 }}>
-            Total di atas sudah mencakup semua matter (lihat Per Matter). Tabel di bawah hanya deposit yang belum ter-assign ke matter tertentu.
+      <Card id="disbursements">
+        <CardHeader><h2 className="text-sm font-semibold text-text">Disbursement</h2></CardHeader>
+        <CardBody className="p-0">
+          {props.disbursements.length === 0 ? (
+            <EmptyState title="Belum ada disbursement" />
+          ) : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-border text-left text-xs font-medium text-muted"><th className="px-5 py-2.5">Date</th><th className="px-5 py-2.5">Category</th><th className="px-5 py-2.5 text-right">Amount</th></tr></thead>
+              <tbody>
+                {props.disbursements.map((d) => (
+                  <tr key={d.transactionId} className="border-b border-border last:border-0 hover:bg-bg">
+                    <td className="px-5 py-2.5">{formatDate(d.date)}</td><td className="px-5 py-2.5 text-muted">{d.category ?? "-"}</td><td className="px-5 py-2.5 text-right">{formatCurrency(d.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card id="sources">
+        <CardHeader><h2 className="text-sm font-semibold text-text">Document / Source</h2></CardHeader>
+        <CardBody>
+          {props.attachments.length === 0 ? (
+            <EmptyState title="Belum ada dokumen pendukung" />
+          ) : (
+            <ul className="space-y-2">
+              {props.attachments.map((a) => (
+                <li key={a.id} className="flex items-center gap-2 text-sm">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M13 2v7h7" /></svg>
+                  <span className="text-text">{a.fileName}</span>
+                  <span className="text-xs text-muted">({a.fileType ?? "file"}, diunggah {formatDate(a.uploadedAt)})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-xs text-muted">
+            Catatan: daftar ini hanya dokumen yang terlampir langsung ke {props.scope === "MATTER" ? "matter" : "client"} ini — dokumen pada cost detail/invoice/transaksi individual ada di masing-masing detailnya.
           </p>
-        )}
-        {props.deposits.length > 0 && (
-          <table width="100%" cellPadding={6}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}><th>Date</th><th>Amount</th></tr></thead>
-            <tbody>
-              {props.deposits.map((d) => (
-                <tr key={d.transactionId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <td>{formatDate(d.date)}</td><td>{formatCurrency(d.amount)}</td>
-                </tr>
+        </CardBody>
+      </Card>
+
+      <Card id="timeline">
+        <CardHeader><h2 className="text-sm font-semibold text-text">Timeline</h2></CardHeader>
+        <CardBody>
+          {props.history.length === 0 ? (
+            <EmptyState title="Belum ada riwayat aktivitas" />
+          ) : (
+            <ul className="space-y-4">
+              {props.history.map((h) => (
+                <li key={h.id} className="border-l-2 border-border pl-3">
+                  <div className="text-xs text-muted">{formatDateTime(h.occurredAt)} · {h.userId}</div>
+                  <div className="text-sm text-text">{describeTimelineEvent(h)}</div>
+                  {h.reason && <div className="text-xs text-muted">Alasan: {h.reason}</div>}
+                </li>
               ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {/* DETAIL: Disbursements */}
-      <section id="disbursements" aria-label="Disbursement">
-        <h2>Disbursement</h2>
-        {props.disbursements.length === 0 ? (
-          <p style={{ opacity: 0.6 }}>Belum ada disbursement.</p>
-        ) : (
-          <table width="100%" cellPadding={6}>
-            <thead><tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}><th>Date</th><th>Category</th><th>Amount</th></tr></thead>
-            <tbody>
-              {props.disbursements.map((d) => (
-                <tr key={d.transactionId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <td>{formatDate(d.date)}</td><td>{d.category ?? "-"}</td><td>{formatCurrency(d.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      {/* SOURCE / DOCUMENTS */}
-      <section id="sources" aria-label="Documents / Sources">
-        <h2>Document / Source</h2>
-        {props.attachments.length === 0 ? (
-          <p style={{ opacity: 0.6 }}>Belum ada dokumen terlampir.</p>
-        ) : (
-          <ul>
-            {props.attachments.map((a) => (
-              <li key={a.id}>{a.fileName} <span style={{ opacity: 0.6 }}>({a.fileType ?? "file"}, diunggah {formatDate(a.uploadedAt)})</span></li>
-            ))}
-          </ul>
-        )}
-        <p style={{ fontSize: 12, opacity: 0.6 }}>
-          Catatan: daftar ini hanya dokumen yang terlampir langsung ke {props.scope === "MATTER" ? "matter" : "client"} ini.
-          Dokumen yang terlampir ke cost detail/invoice/transaksi tertentu di dalamnya belum tergabung di sini (lihat Step 14 gap note).
-        </p>
-      </section>
-
-      {/* TIMELINE */}
-      <section id="timeline" aria-label="Timeline">
-        <h2>Timeline</h2>
-        {props.history.length === 0 ? (
-          <p style={{ opacity: 0.6 }}>Belum ada riwayat aktivitas.</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {props.history.map((h) => (
-              <li key={h.id} style={{ borderLeft: "2px solid #ddd", paddingLeft: 12, marginBottom: 8 }}>
-                <div style={{ fontSize: 12, opacity: 0.6 }}>{formatDateTime(h.occurredAt)} · {h.userId}</div>
-                <div>{h.action} — {h.entityType}</div>
-                {h.reason && <div style={{ fontSize: 12, opacity: 0.7 }}>Alasan: {h.reason}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+            </ul>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 }

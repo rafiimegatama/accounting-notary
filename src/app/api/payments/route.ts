@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, withApiHandler } from "@/lib/apiResponse";
+import { getCurrentUser } from "@/lib/currentUser";
 
 // GET /api/payments?matterId=...&clientId=...
 export async function GET(request: Request) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const matterId = searchParams.get("matterId") ?? undefined;
     const clientId = searchParams.get("clientId") ?? undefined;

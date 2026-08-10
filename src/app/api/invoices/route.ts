@@ -5,6 +5,7 @@ import { writeAuditLog } from "@/lib/audit";
 
 export async function GET(request: Request) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const matterId = searchParams.get("matterId") ?? undefined;
     const invoices = await prisma.invoice.findMany({

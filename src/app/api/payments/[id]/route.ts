@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, withApiHandler, ApiError } from "@/lib/apiResponse";
+import { getCurrentUser } from "@/lib/currentUser";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const payment = await prisma.payment.findUnique({
       where: { id: params.id },
       include: {

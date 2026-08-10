@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Design tokens — Section 4 of the one-shot build prompt. Semantic colors
+   (success/warning/danger) are used for status meaning, never decoration. */
+@theme {
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-navy: #172554;
+  --color-bg: #f8fafc;
+  --color-card: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fee2e2;
+
+  --radius-card: 16px;
+  --radius-control: 12px;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Visible focus state for keyboard navigation (Section 29) */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+.input {
+  width: 100%;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  background: white;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}

@@ -3,8 +3,9 @@ import { apiSuccess, withApiHandler, ApiError } from "@/lib/apiResponse";
 import { getCurrentUser } from "@/lib/currentUser";
 import { writeAuditLog } from "@/lib/audit";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const matter = await prisma.matter.findUnique({ where: { id: params.id }, include: { client: true } });
     if (!matter) throw new ApiError("NOT_FOUND", "Matter tidak ditemukan.", 404);
     return apiSuccess(matter);

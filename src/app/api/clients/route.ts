@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/audit";
 // is no "client financial position" to GET without a way to create clients.
 export async function GET(request: Request) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") ?? undefined;
     const clients = await prisma.client.findMany({

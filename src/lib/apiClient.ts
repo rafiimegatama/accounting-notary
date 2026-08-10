@@ -1,25 +1,26 @@
 "use client";
 
-import { getStaffName } from "./staffIdentity";
-
-// Client-side fetch wrapper: attaches x-staff-name, unwraps the standard
-// {success, data, message} / {success:false, errorCode, message} envelope
-// from Step 13, throws a plain Error with the server's message on failure.
+// Client-side fetch wrapper: unwraps the standard {success, data, message}
+// / {success:false, errorCode, message} envelope from Step 13, throws a
+// plain Error with the server's message on failure. Authentication is the
+// browser's session cookie (sent automatically on same-origin requests) —
+// no manual header needed since the auth rebuild (see src/lib/session.ts).
 export async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const staffName = getStaffName();
   const isFormData = options.body instanceof FormData;
 
   const res = await fetch(url, {
     ...options,
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(staffName ? { "x-staff-name": staffName } : {}),
       ...options.headers,
     },
   });
 
   const json = await res.json();
   if (!json.success) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
     throw new Error(json.message ?? "Terjadi kesalahan.");
   }
   return json.data as T;

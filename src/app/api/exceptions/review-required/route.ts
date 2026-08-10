@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, withApiHandler } from "@/lib/apiResponse";
+import { getCurrentUser } from "@/lib/currentUser";
 
 // GET /api/exceptions/review-required?includeWarning=true
 // Step 9: NORMAL/WARNING/REVIEW_REQUIRED — WARNING is soft/informational,
@@ -7,6 +8,7 @@ import { apiSuccess, withApiHandler } from "@/lib/apiResponse";
 // ?includeWarning=true also surfaces WARNING items for a broader queue view.
 export async function GET(request: Request) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const { searchParams } = new URL(request.url);
     const includeWarning = searchParams.get("includeWarning") === "true";
 

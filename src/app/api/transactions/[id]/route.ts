@@ -4,8 +4,9 @@ import { getCurrentUser } from "@/lib/currentUser";
 import { writeAuditLog } from "@/lib/audit";
 import { assertOneOf, REVIEW_STATUSES, SOURCE_TYPES } from "@/lib/enums";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   return withApiHandler(async () => {
+    getCurrentUser(request);
     const transaction = await prisma.financialTransaction.findUnique({
       where: { id: params.id },
       include: {

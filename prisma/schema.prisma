@@ -250,3 +250,18 @@ model SystemSetting {
 
   @@map("system_setting")
 }
+
+// Minimal local auth (Section 23 of one-shot build prompt). Not a
+// permission/role system — every staff account can do everything, matching
+// the office's actual size and the non-goal of building complex approval
+// workflow. PIN, not password, since this is a shared office terminal.
+model Staff {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  pinHash    String   @map("pin_hash")
+  pinSalt    String   @map("pin_salt")
+  status     String   @default("ACTIVE") // ACTIVE | INACTIVE
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("staff")
+}
