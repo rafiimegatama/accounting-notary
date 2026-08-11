@@ -107,6 +107,11 @@ yang harus DITINGKATKAN.
 
 ## 8. Riwayat Perubahan
 
+Tabel di bawah adalah **working memory ringkas untuk AI agent** (di-baca otomatis tiap sesi).
+Changelog lengkap & human-readable ada di [`CHANGELOG.md`](CHANGELOG.md) — **itu adalah source of
+truth**. Setiap kali menambah baris di sini, tambahkan juga entry yang lebih detail di
+`CHANGELOG.md` (tulis di sana dulu, baru ringkas satu baris ke sini).
+
 | Versi | Tanggal | Perubahan | File | Keterangan |
 |---|---|---|---|---|
 | v0 | 2026-08-10 | Inisialisasi project | CLAUDE.md | Project dimulai dari kosong (greenfield). Stack dikonfirmasi: Next.js + SQLite + Prisma. |
@@ -114,3 +119,4 @@ yang harus DITINGKATKAN.
 | v2 | 2026-08-10 | Tambah Docker Compose | Dockerfile, docker-compose.yml, CLAUDE.md | User minta cara jalanin sistem tanpa install PostgreSQL/Node lokal. Dipakai juga untuk benar-benar menjalankan 14 skenario testing di Step 20 (sandbox awal tidak punya Postgres terinstal dan tidak ada akses sudo). |
 | v3 | 2026-08-10 | MVP build lengkap (Step 1-22) selesai | seluruh src/, prisma/, MVP_SCOPE.md, SYSTEM_CONSISTENCY_REPORT.md | Step 21 menemukan 5 halaman nav yang belum pernah dibangun (`/`, `/clients`, `/transactions`, `/cost-details`, `/reports`) — ditutup. Step 22 menemukan 1 gap audit trail nyata (`recomputeReviewStatus` mengubah status otomatis tanpa log) — diperbaiki, dibuktikan test baru. Final: 9/9 MUST HAVE terbangun+teruji, 14/15 consistency check PASS, 1 WARNING (Document/Source aggregation belum lengkap, sudah dikenal & dilabeli jujur di UI), 0 FAIL. |
 | v4 | 2026-08-10 | Complete UI + Application Integration | seluruh src/app, src/components, prisma (Staff table), UI_IMPLEMENTATION_REPORT.md | Built Notary Financial Control application berdasarkan Phase 1–22 functional contract: Tailwind design system, minimal local auth (staff+PIN, session cookie, lock screen), app shell (sidebar+header+⌘K search), 20 halaman (6 baru: Invoices/Payments/Deposits/Disbursements/Sources/Audit Log/Settings), 10 API endpoint baru. Menemukan & memperbaiki: audit trail gap yang sama seperti v3 tapi kali ini di call site `allocate`/`reverse` (regression test ditambah), 18 GET route yang belum enforce auth, `/api/auth/staff` yang ke-cache statis saat build (bug produksi nyata, ditemukan saat QA manual), Suspense boundary hilang di `/login`. Demo seed data ditambahkan (`npm run seed:demo`). Build/lint/typecheck/test semua PASS (23/23 test). Lihat UI_IMPLEMENTATION_REPORT.md untuk detail lengkap. |
+| v5 | 2026-08-11 | Docker/Prisma fix, GitHub push, dokumentasi | Dockerfile, README.md, CHANGELOG.md | `node:20-alpine` tidak punya OpenSSL sehingga Prisma migration engine gagal total di container (`prisma migrate deploy` error) — diperbaiki dengan `apk add openssl` di stage `builder` dan `runner`. Diverifikasi lewat rebuild penuh dari nol (`build --no-cache` → `up -d` → `migrate deploy` → `seed:demo`) terhadap volume Postgres baru. Repo di-push ke GitHub (`rafiimegatama/accounting-notary`). README.md dan CHANGELOG.md ditambahkan; tabel ini sejak v5 jadi ringkasan, `CHANGELOG.md` adalah source of truth. |
