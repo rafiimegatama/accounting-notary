@@ -57,7 +57,7 @@ notary_accounting/
 │   │
 │   ├── components/                Owner: frontend-agent
 │   │   ├── ui/                    Shared primitives: Button, Card, StatusBadge, EmptyState,
-│   │   │                          Skeleton, SummaryCard, Tabs, Toast
+│   │   │                          SummaryCard, Tabs, Toast, Typeahead, FieldHelp, CalculationExplain
 │   │   ├── charts/                FinancialTrendChart, ReviewDonutChart (recharts)
 │   │   └── *.tsx                  Feature components: FinancialPositionView, LinkDrawer,
 │   │                              TransactionActions, TransactionTraceView, GlobalSearch, etc.
@@ -68,24 +68,35 @@ notary_accounting/
 │       ├── currentUser.ts         Session-cookie verification for API routes
 │       ├── session.ts             HMAC session signing/verification
 │       ├── requireSession.ts      Session verification for Server Components (pages)
+│       ├── loginRateLimit.ts      Per-staffId login lockout after repeated failed PIN attempts
 │       ├── position.ts            Financial position formulas — see SYSTEM_OVERVIEW.md §4
 │       ├── exceptionRules.ts      NORMAL/WARNING/REVIEW_REQUIRED classification rules
+│       ├── financialTransactionActions.ts   Shared create/classify/void/correct transaction logic
 │       ├── trace.ts, history.ts   Transaction trace / timeline construction
 │       ├── search.ts              Global search query logic
-│       ├── dashboard.ts, listAggregates.ts, reviewQueue.ts, sources.ts   Read-model helpers
+│       ├── backupStatus.ts        Reads backup/attachments-backup output for Settings > Backup & Recovery
+│       ├── dashboard.ts, listAggregates.ts, sources.ts   Read-model helpers
 │       └── enums.ts, formatCurrency.ts, timelineLabel.ts   Shared constants/formatters
 │
-├── scripts/
-│   ├── seed-demo.ts               Seeds via real route handlers (not raw SQL) — owner: devops-agent
-│   └── reset-test-db.sh           DROP/CREATE test DB (DELETE is trigger-blocked by design)
+├── scripts/                       Owner: devops-agent
+│   ├── seed-demo.ts               Seeds via real route handlers (not raw SQL)
+│   ├── reset-test-db.sh           DROP/CREATE test DB (DELETE is trigger-blocked by design)
+│   ├── check-health.sh            Container status/health + host disk usage, plain OK/WARN output
+│   ├── offsite-sync.sh            Syncs ./backups/ to a second always-mounted disk (host cron)
+│   ├── restore-drill.sh           Non-destructive restore of the latest dump into a scratch DB
+│   ├── deploy.sh, rollback.sh     Git-SHA-tagged builds + rollback via `docker compose up`, no rebuild
+│   ├── migrate.sh                 `prisma migrate deploy` wrapped with an immediate pre-migration snapshot
+│   └── capacity-report.sh         Row-count/table-size snapshot appended to a CSV growth log
 │
 ├── tests/                         Owner: qa-agent
 │   ├── scenarios/                 End-to-end scenario tests against a real Postgres DB
 │   ├── unit/                      Pure-function unit tests
 │   └── helpers/callApi.ts         Calls route handlers directly with a real signed session cookie
 │
-├── attachments/                   Uploaded file storage (filesystem, path stored in DB)
-├── Dockerfile, docker-compose.yml Owner: devops-agent
+├── .github/workflows/ci.yml       Lint/typecheck/test/build gate on push+PR — does not touch deployment
+├── attachments/                   Uploaded file storage (filesystem, path stored in DB) — gitignored
+├── backups/                       `backup`/`attachments-backup` output, read-only by the app — gitignored
+├── Dockerfile, docker-compose.yml, Caddyfile, next.config.js   Owner: devops-agent
 └── .env, .env.example, .env.test  Never commit real .env — see PROJECT_RULES.md / DEPLOYMENT.md
 ```
 
