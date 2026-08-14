@@ -21,7 +21,10 @@ async function computeTransactionBucket(where: { matterId: string } | { clientId
     include: {
       payment: { include: { allocations: { where: { status: "ACTIVE" } } } },
       deposit: true,
-      disbursement: true,
+      // Roadmap #3 — join the funding bank/account so Matter/Client
+      // Position's disbursement breakdown can show it (previously only the
+      // scalar bankAccountId was persisted, never surfaced anywhere).
+      disbursement: { include: { bankAccount: true } },
     },
     orderBy: { transactionDate: "asc" },
   });
@@ -64,6 +67,7 @@ async function computeTransactionBucket(where: { matterId: string } | { clientId
         date: t.transactionDate,
         amount: t.amount,
         category: t.disbursement!.category,
+        bankAccount: t.disbursement!.bankAccount,
       })),
     },
   };

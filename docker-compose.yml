@@ -6,15 +6,61 @@
 # Override POSTGRES_PASSWORD before any real/production use — the default
 # below is a dev-only placeholder, not meant to be reused as-is.
 
+# All 5 images below are pinned by digest (image:tag@sha256:...), not just
+# tag — a floating tag like `node:20-alpine` can silently resolve to a
+# different build months apart (a base-image bump between two `--no-cache`
+# rebuilds), which breaks the "same input -> same image" guarantee this
+# multi-stage build otherwise has. The tag is kept alongside the digest
+# purely for human readability; the digest is what Docker actually resolves.
+#
+# To refresh a pin deliberately (e.g. to pick up an Alpine security patch),
+# do NOT hand-edit the hash — pull the tag fresh and re-read its digest:
+#   docker pull <image>:<tag>
+#   docker inspect <image>:<tag> --format='{{index .RepoDigests 0}}'
+# then update both this file and the Dockerfile (node:20-alpine appears in
+# 4 stages there) together, and re-verify `docker compose config` +
+# `docker build` before deploying — an unpinned patch bump is exactly the
+# kind of untested-drift this pinning exists to prevent.
+
+# Shared log-rotation policy (YAML anchor, one definition instead of five
+# copies to keep in sync). Docker's default json-file driver has no size
+# cap at all; every service here runs restart:unless-stopped indefinitely,
+# so without this, container logs grow unbounded on the host disk over
+# months of uptime. 10MB x 3 files (~30MB cap) per service is a starting
+# point, not measured against this office's actual disk size.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:44c4ee9810eff91f7eab4d822642e01115b1a9eccce4bcbdde7604752d68eac6
+    restart: unless-stopped
+    logging: *default-logging
+    # Starting points, not measured against this office's actual server —
+    # tune after watching real `docker stats` under normal daily use.
+    # Prevents one runaway process among the 5 services here from starving
+    # the others on a single shared office box (no per-service isolation
+    # otherwise).
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "2"
     environment:
       POSTGRES_USER: notary_app
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_dev_only}
       POSTGRES_DB: notary_financial_control
+    # Bound to 127.0.0.1 only — the app container already reaches Postgres via
+    # the internal Compose network (db:5432), so a LAN-wide publish served no
+    # purpose except occasional host-side debugging (e.g. a local psql/DB GUI
+    # on the server itself), and previously left the DB reachable from any
+    # device on the office LAN/WiFi, not just the app. If host-side access
+    # isn't needed at all, this line can be removed entirely instead.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,17 +71,184 @@ services:
 
   app:
     build: .
+    # Explicit name+tag (rather than letting Compose derive one from the
+    # checkout directory name, which isn't guaranteed stable across clones)
+    # so scripts/deploy.sh can tag each build with the git commit SHA and
+    # scripts/rollback.sh can switch back to an older one with a plain
+    # `docker compose up`, not a rebuild — see docs/DEPLOYMENT.md §13d.
+    # Defaults to `:latest` when APP_IMAGE_TAG is unset, matching the
+    # previous implicit behavior exactly.
+    image: notary-accounting-app:${APP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+          cpus: "2"
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://notary_app:${POSTGRES_PASSWORD:-changeme_dev_only}@db:5432/notary_financial_control?schema=public
       ATTACHMENTS_DIR: /app/attachments
+      # Root cause of "SESSION_SECRET is not set" (src/lib/session.ts) on
+      # every page: this var was never wired through to the container at
+      # all — only DATABASE_URL/ATTACHMENTS_DIR were. Required (no dev
+      # fallback, unlike POSTGRES_PASSWORD above) since a default secret
+      # here would silently defeat session signing security.
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env — see .env.example}
+      # Defaults to false — flip to true in .env only after confirming the
+      # `caddy` service's TLS is actually reachable (see docs/DEPLOYMENT.md),
+      # otherwise the session cookie is silently dropped on plain-HTTP
+      # requests and staff can't log in.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Settings > Backup & Recovery (src/lib/backupStatus.ts) reads these to
+      # show real last-backup timestamps/history — read-only, additive, does
+      # not change what the `backup`/`attachments-backup` services write.
+      BACKUP_DB_DIR: /app/backups/db
+      BACKUP_ATTACHMENTS_DIR: /app/backups/attachments
     ports:
       - "3000:3000"
     volumes:
       - attachments_data:/app/attachments
+      # Read-only: the app only ever displays backup status, it never
+      # creates/modifies/deletes anything under these paths — the `backup`/
+      # `attachments-backup` services above remain the sole writers.
+      - ./backups/db:/app/backups/db:ro
+      - ./backups/attachments:/app/backups/attachments:ro
+    healthcheck:
+      # GET /api/health is unauthenticated on purpose (bypasses session
+      # middleware) so Docker can probe it. Confirms both "process is up"
+      # AND "can actually reach the DB" — a plain container-running check
+      # missed the v10 SESSION_SECRET incident where every page 500'd while
+      # the container still looked healthy. BusyBox wget (Alpine default,
+      # confirmed present in the `runner` stage) is sufficient here — no new
+      # package needed.
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # LAN-facing TLS front door — see docs/DEPLOYMENT.md "TLS for LAN Access".
+  # Additive only: reverse-proxies to the app's existing plain-HTTP port
+  # over the internal Compose network (app:3000). Deliberately does NOT
+  # replace or remove the app service's own "3000:3000" mapping above —
+  # that mapping is what the temporary ngrok tunnel (docs/DEPLOYMENT.md §7)
+  # points at today, and it must keep working unchanged.
+  caddy:
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+    depends_on:
+      - app
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Scheduled Postgres dump + rotation + gzip via a maintained image (reuse
+  # before build new, CLAUDE.md §7.6) rather than a hand-rolled cron+pg_dump
+  # script. Bind-mounted (not a named volume) so staff can see/copy dump
+  # files straight from the host filesystem onto a USB drive or network
+  # share for off-machine backup — see docs/DEPLOYMENT.md §5 for the manual
+  # off-machine-copy step this does NOT automate (deliberately: no
+  # cloud/NAS integration, CLAUDE.md non-goals).
+  backup:
+    # Pinned to the postgres-16-matched tag, not `:latest` — found live via
+    # the restore drill (scripts/restore-drill.sh) while verifying this
+    # audit's "backup restore never verified" gap: `:latest` bundles
+    # pg_dump 18, which emits `SET transaction_timeout = 0` (a Postgres 17+
+    # session parameter) into every dump. Restoring that dump against this
+    # stack's actual postgres:16-alpine server fails immediately with
+    # "unrecognized configuration parameter" — the daily backup was being
+    # produced successfully but was NOT actually restorable. `16-alpine`
+    # bundles pg_dump 16.10, matching the `db` service's server version.
+    image: prodrigestivill/postgres-backup-local:16-alpine@sha256:08e7b70879af45a89305b91f4600cfbc88da2419a65948df870cddb082b8cf83
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: notary_financial_control
+      POSTGRES_USER: notary_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_dev_only}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 14
+      BACKUP_KEEP_WEEKS: 8
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups/db:/backups
+
+  # The backup service above only covers Postgres rows, not the uploaded
+  # files (proof of payment, supporting docs) referenced by them — those
+  # live in the attachments_data volume. Minimal tar+rotate loop is
+  # appropriate here (not a "real" backup product, no maintained image
+  # needed for this). Read-only mount of the source volume.
+  attachments-backup:
+    image: alpine:3@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1"
+    volumes:
+      - attachments_data:/data:ro
+      - ./backups/attachments:/backups
+    entrypoint:
+      - sh
+      - -c
+      - |
+        STATUS_FILE=/backups/.attachments-backup-status
+        while true; do
+          if tar -czf /backups/attachments-$(date +%Y%m%d-%H%M%S).tar.gz -C /data . ; then
+            echo "OK $(date -Is)" > "$STATUS_FILE" ;
+          else
+            echo "FAILED $(date -Is)" > "$STATUS_FILE" ;
+          fi ;
+          find /backups -name 'attachments-*.tar.gz' -mtime +14 -delete ;
+          sleep 86400 ;
+        done
+    # Closes a real gap found in a DevOps architecture review: this loop had
+    # no failure signal at all — a `tar` that failed every single night
+    # (disk full, /data unreadable) would still leave the container
+    # "running" forever, indistinguishable from a working backup in
+    # `docker compose ps`/scripts/check-health.sh. This is the exact
+    # "ran successfully" vs "actually worked" gap the v31 pg_dump-version
+    # bug already turned out to be, for a different service. The healthcheck
+    # requires BOTH a recent status file (< 26h old — the loop runs once
+    # every 24h, so this only trips if a run is late/stuck, not mid-cycle)
+    # AND its content being "OK", not just present.
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - >-
+          test -n "$(find /backups -name '.attachments-backup-status' -mmin -1560)" &&
+          grep -q '^OK' /backups/.attachments-backup-status
+      interval: 1h
+      timeout: 10s
+      retries: 1
+      start_period: 5m
 
 volumes:
   db_data:
   attachments_data:
+  caddy_data:
+  caddy_config:

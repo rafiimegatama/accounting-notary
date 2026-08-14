@@ -1,17 +1,27 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/requireSession";
 import { formatDateTime } from "@/lib/formatCurrency";
+import { BRANDING_KEYS } from "@/lib/branding";
+import { getBrandingSettings } from "@/lib/brandingServer";
+import { getBackupStatus } from "@/lib/backupStatus";
+import { BrandingSettingsForm } from "@/components/BrandingSettingsForm";
+import { BackupRecoverySettings } from "@/components/BackupRecoverySettings";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 
-// Minimal settings surface — read-only for MVP. Changing exception-rule
-// defaults (Step 9) is rare enough that direct DB access is acceptable for
-// now; building a full settings CRUD + its own audit trail wasn't
-// justified by any validated need (Section 41: avoid overengineering).
+// Exception-rule defaults stay read-only — changing them is rare enough
+// that direct DB access remains acceptable (Section 41: avoid
+// overengineering). Branding is the one deliberately bounded exception: a
+// fixed set of text fields + a closed accent-color preset list, backed by
+// the same SystemSetting table, added because staff wanted to tweak
+// hero/login wording without a code round-trip every time — see
+// BrandingSettingsForm / /api/settings/branding for the guardrails.
 export default async function SettingsPage() {
   const session = requireSession();
-  const [settings, staff] = await Promise.all([
-    prisma.systemSetting.findMany({ orderBy: { key: "asc" } }),
+  const [settings, staff, branding, backupStatus] = await Promise.all([
+    prisma.systemSetting.findMany({ where: { key: { notIn: BRANDING_KEYS } }, orderBy: { key: "asc" } }),
     prisma.staff.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    getBrandingSettings(),
+    getBackupStatus(),
   ]);
 
   return (
@@ -40,6 +50,16 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-text">Branding</h2>
+          <p className="mt-0.5 text-xs text-muted">Ubah teks dan warna aksen Dashboard hero &amp; Login screen — tidak mengubah layout atau data finansial.</p>
+        </CardHeader>
+        <CardBody className="p-0">
+          <BrandingSettingsForm initial={branding} />
+        </CardBody>
+      </Card>
+
+      <Card>
         <CardHeader><h2 className="text-sm font-semibold text-text">Staf Aktif</h2></CardHeader>
         <CardBody>
           <ul className="space-y-1 text-sm">
@@ -47,6 +67,8 @@ export default async function SettingsPage() {
           </ul>
         </CardBody>
       </Card>
+
+      <BackupRecoverySettings status={backupStatus} />
     </div>
   );
 }

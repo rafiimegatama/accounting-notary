@@ -6,6 +6,38 @@ function sum(values: Prisma.Decimal[]) {
   return values.reduce((a, v) => a.add(v), ZERO);
 }
 
+// Painkiller #10 ("Tracking payment pihak ketiga") — sentinel key for
+// disbursements with no bankAccountId recorded (nullable FK, pre-v18 rows
+// especially). Exported so /disbursements can build the matching
+// ?bankAccountId= filter link/query without hardcoding the string twice.
+export const UNASSIGNED_BANK_ACCOUNT_KEY = "none";
+
+// Backs the "Disbursement by Bank Account" summary above /disbursements'
+// capped (take: 150) list — this query is deliberately uncapped so the total
+// reflects ALL disbursements, not just the most recent page. Disbursement
+// has no amount column of its own (it lives on the related
+// FinancialTransaction via financialTransactionId), so this can't be a
+// Prisma groupBy through the relation — same fetch-then-reduce-in-memory
+// shape as the rest of this file / src/lib/dashboard.ts.
+export async function getDisbursementSummaryByBankAccount() {
+  const disbursements = await prisma.disbursement.findMany({
+    select: { bankAccountId: true, bankAccount: true, transaction: { select: { amount: true } } },
+  });
+
+  const map = new Map<string, { key: string; bankAccount: (typeof disbursements)[number]["bankAccount"]; total: Prisma.Decimal; count: number }>();
+  for (const d of disbursements) {
+    const key = d.bankAccountId ?? UNASSIGNED_BANK_ACCOUNT_KEY;
+    const entry = map.get(key) ?? { key, bankAccount: d.bankAccount, total: ZERO, count: 0 };
+    entry.total = entry.total.add(d.transaction.amount);
+    entry.count += 1;
+    map.set(key, entry);
+  }
+
+  return Array.from(map.values())
+    .map((e) => ({ ...e, total: Number(e.total) }))
+    .sort((a, b) => b.total - a.total);
+}
+
 // Backs the Clients tab of /clients (Section 8). Same "batch queries, reduce
 // in memory" approach as src/lib/dashboard.ts — avoids N+1 across clients.
 export async function getClientListWithAggregates(search?: string) {

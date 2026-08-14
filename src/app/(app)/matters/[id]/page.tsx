@@ -1,23 +1,42 @@
+import { cookies } from "next/headers";
 import { getMatterFinancialPosition } from "@/lib/position";
 import { getMatterHistory } from "@/lib/history";
-import { prisma } from "@/lib/prisma";
+import { getMatterSourceSummary } from "@/lib/sources";
+import { getBrandingSettings } from "@/lib/brandingServer";
 import { FinancialPositionView } from "@/components/FinancialPositionView";
 import { AddCostDetailModal } from "@/components/AddCostDetailModal";
 import { CreateInvoiceModal } from "@/components/CreateInvoiceModal";
+import { UploadDocumentModal } from "@/components/UploadDocumentModal";
+import { LITE_MODE_COOKIE, LITE_MODE_ON } from "@/lib/liteMode";
 
 // Server component: fetches directly via the lib functions (same code the
 // API routes call) rather than making an internal HTTP round-trip to its
 // own API — this page and /api/matters/[id]/position share logic, not just a contract.
 export default async function MatterPositionPage({ params }: { params: { id: string } }) {
-  const [position, history, attachments] = await Promise.all([
+  const liteMode = cookies().get(LITE_MODE_COOKIE)?.value === LITE_MODE_ON;
+  const [position, history, sources, branding] = await Promise.all([
     getMatterFinancialPosition(params.id),
     getMatterHistory(params.id),
-    prisma.financialAttachment.findMany({ where: { matterId: params.id }, orderBy: { uploadedAt: "desc" } }),
+    // P2.3: aggregated across Matter + Cost Detail + Invoice + Transaction —
+    // not just attachments linked directly to the matter (see sources.ts).
+    getMatterSourceSummary(params.id),
+    // v25 print header — live setting, not the compile-time default.
+    getBrandingSettings(),
   ]);
+  const attachments = sources.map((s) => ({
+    id: s.attachmentId,
+    fileName: s.fileName,
+    fileType: s.fileType,
+    uploadedAt: s.uploadedAt,
+    originLabel: s.originLabel,
+    originHref: s.originHref,
+  }));
 
   return (
     <FinancialPositionView
       scope="MATTER"
+      liteMode={liteMode}
+      brandingEyebrow={branding.branding_hero_eyebrow}
       title={position.matter.matterName}
       subtitle={position.matter.client.name}
       status={position.matter.status}
@@ -34,6 +53,7 @@ export default async function MatterPositionPage({ params }: { params: { id: str
         <>
           <AddCostDetailModal matterId={params.id} />
           <CreateInvoiceModal matterId={params.id} />
+          <UploadDocumentModal matterId={params.id} />
         </>
       }
     />

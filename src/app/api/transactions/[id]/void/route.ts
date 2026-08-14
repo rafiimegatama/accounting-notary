@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, withApiHandler, ApiError } from "@/lib/apiResponse";
 import { getCurrentUser } from "@/lib/currentUser";
-import { writeAuditLog } from "@/lib/audit";
+import { assertVoidable, voidFinancialTransactionTx } from "@/lib/financialTransactionActions";
 
 // POST /api/transactions/[id]/void — closes the last real Step 19 gap: the
 // DDL (Step 11) already has status/voided_at/voided_by/void_reason columns
@@ -9,43 +9,24 @@ import { writeAuditLog } from "@/lib/audit";
 // (blocked by trigger anyway) and without mutating amount/date/direction
 // (also blocked by trigger). Until this endpoint existed, those columns
 // were unreachable — VOID never actually happened.
+//
+// The validation + mutation + audit shape now lives in
+// financialTransactionActions.ts so POST /api/payments/[id]/correct
+// (Roadmap #2) can reuse the exact same void behavior instead of a second,
+// possibly-diverging implementation. This route's own behavior/response is
+// unchanged by that extraction.
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   return withApiHandler(async () => {
     const userId = getCurrentUser(request);
     const body = await request.json().catch(() => ({}));
     const reason: string | undefined = body.reason;
-    if (!reason) throw new ApiError("VALIDATION_ERROR", "reason wajib diisi untuk void transaksi.");
+    if (!reason || !reason.trim()) throw new ApiError("VALIDATION_ERROR", "reason wajib diisi untuk void transaksi.");
 
-    const existing = await prisma.financialTransaction.findUnique({ where: { id: params.id } });
-    if (!existing) throw new ApiError("NOT_FOUND", "Transaksi tidak ditemukan.", 404);
-    if (existing.status === "VOIDED") throw new ApiError("ALREADY_VOIDED", "Transaksi ini sudah di-void sebelumnya.");
+    const existing = await assertVoidable(params.id);
 
-    const activeAllocations = await prisma.paymentAllocation.count({
-      where: { status: "ACTIVE", payment: { financialTransactionId: params.id } },
-    });
-    if (activeAllocations > 0) {
-      throw new ApiError(
-        "HAS_ACTIVE_ALLOCATIONS",
-        "Transaksi ini masih punya alokasi pembayaran aktif — reverse alokasinya dulu sebelum void."
-      );
-    }
-
-    const voided = await prisma.$transaction(async (tx) => {
-      const result = await tx.financialTransaction.update({
-        where: { id: params.id },
-        data: { status: "VOIDED", voidedAt: new Date(), voidedBy: userId, voidReason: reason },
-      });
-      await writeAuditLog(tx, {
-        entityType: "FINANCIAL_TRANSACTION",
-        entityId: params.id,
-        action: "VOID",
-        userId,
-        previousValue: { status: existing.status },
-        newValue: { status: "VOIDED" },
-        reason,
-      });
-      return result;
-    });
+    const voided = await prisma.$transaction((tx) =>
+      voidFinancialTransactionTx(tx, { transactionId: params.id, userId, reason, previousStatus: existing.status })
+    );
 
     return apiSuccess(voided, "Transaksi berhasil di-void.");
   });

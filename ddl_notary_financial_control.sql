@@ -213,12 +213,38 @@ CREATE TRIGGER trg_deposit_no_delete BEFORE DELETE ON deposit
   FOR EACH ROW EXECUTE FUNCTION prevent_delete();
 
 -- ================================================================
+-- BANK_ACCOUNT  (funding bank/account for a Disbursement — Roadmap #3,
+-- "structured per-bank disbursement categorization". Additive to, not a
+-- replacement for, disbursement.category which stays free text describing
+-- what the money was spent on.)
+-- ================================================================
+CREATE TABLE bank_account (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_name         TEXT NOT NULL,
+  account_name      TEXT, -- e.g. "Operasional" / "RPL Notaris"
+  account_number    TEXT,
+  status            TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE')),
+  notes             TEXT,
+  created_by        TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_bank_account_updated_at BEFORE UPDATE ON bank_account
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- No prevent_delete() trigger — matches client/matter, not
+-- invoice/cost_detail/disbursement. A bank_account still referenced by a
+-- disbursement is protected by that FK's ON DELETE RESTRICT instead (see
+-- disbursement.bank_account_id below).
+
+-- ================================================================
 -- DISBURSEMENT  (classification: financial_transaction paid out on behalf of client)
 -- ================================================================
 CREATE TABLE disbursement (
   id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   financial_transaction_id  UUID NOT NULL UNIQUE REFERENCES financial_transaction(id) ON DELETE RESTRICT,
   category                  TEXT, -- e.g. BPHTB, PNBP, biaya pihak ketiga; taxonomy UNKNOWN
+  bank_account_id           UUID REFERENCES bank_account(id) ON DELETE RESTRICT, -- funding bank/account; nullable. Not DB-immutable (no trigger blocks UPDATE on this table besides no-delete) — set-once-at-classify-time is an application-layer convention only, same as category has always been (no PATCH route exists for either)
   notes                     TEXT,
   created_by                TEXT NOT NULL,
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -292,7 +318,8 @@ CREATE TABLE audit_log (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   entity_type      TEXT NOT NULL CHECK (entity_type IN (
                       'CLIENT','MATTER','FINANCIAL_TRANSACTION','COST_DETAIL','INVOICE',
-                      'PAYMENT','PAYMENT_ALLOCATION','DEPOSIT','DISBURSEMENT','FINANCIAL_ATTACHMENT'
+                      'PAYMENT','PAYMENT_ALLOCATION','DEPOSIT','DISBURSEMENT','FINANCIAL_ATTACHMENT',
+                      'BANK_ACCOUNT'
                     )),
   entity_id        UUID NOT NULL,
   action           TEXT NOT NULL CHECK (action IN (

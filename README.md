@@ -151,6 +151,26 @@ tests/
 | [`UI_IMPLEMENTATION_REPORT.md`](UI_IMPLEMENTATION_REPORT.md) | UI build report: screens, components, auth model, bugs found & fixed |
 | `ddl_notary_financial_control.sql` | Authoritative DDL (constraints/triggers not expressible in Prisma schema) |
 
+### `docs/` — multi-agent development framework
+
+A structured framework for how (AI-assisted) work on this repo gets scoped, built, verified, and
+recorded — start at [`docs/PROJECT_RULES.md`](docs/PROJECT_RULES.md) if you're contributing.
+
+| File | Purpose |
+|---|---|
+| [`docs/PRD.md`](docs/PRD.md) | Full product requirements: goals, personas, functional/non-functional requirements, current status per requirement |
+| [`docs/PROJECT_RULES.md`](docs/PROJECT_RULES.md) | Binding hard constraints, scope discipline, process & escalation rules |
+| [`docs/SYSTEM_OVERVIEW.md`](docs/SYSTEM_OVERVIEW.md) | Technical architecture: request lifecycle, data model, auth, deployment topology |
+| [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | The end-to-end change pipeline (with diagram) and its fast path for trivial changes |
+| [`docs/AGENT_COMMUNICATION.md`](docs/AGENT_COMMUNICATION.md) | How specialist agents hand off work and report status |
+| [`docs/PROJECT_MEMORY.md`](docs/PROJECT_MEMORY.md) | What gets remembered where — Claude's cross-session memory vs. repo docs vs. the `audit_log` table |
+| [`docs/REPOSITORY_STRUCTURE.md`](docs/REPOSITORY_STRUCTURE.md) | Folder-by-folder map with agent ownership |
+| [`docs/CODING_STANDARD.md`](docs/CODING_STANDARD.md) | API route shape, immutability rules, frontend conventions — grounded in real code |
+| [`docs/TESTING_STANDARD.md`](docs/TESTING_STANDARD.md) | Real-database testing philosophy, what requires a test |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Docker Compose runbook, known issues, backup/rollback |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Prioritized backlog, currently led by 3 items raised by office accounting staff |
+| [`.claude/agents/`](.claude/agents/) | Operational Claude Code subagents (orchestrator, planner, architect, frontend, backend, QA, debug, security, devops, reporter) implementing the workflow above |
+
 ## Known limitations
 
 - Document/Source aggregation on the Matter/Client Position screen only shows attachments linked

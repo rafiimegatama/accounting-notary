@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { formatCurrency, formatDate } from "@/lib/formatCurrency";
+import { useModalFocusTrap } from "@/components/ui/useModalFocusTrap";
 
 interface SearchResults {
   clients: { id: string; name: string }[];
@@ -20,7 +21,12 @@ export function GlobalSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Focus-on-open (the search input is the first focusable element in the
+  // panel) and Escape-to-close are now both handled by the shared focus
+  // trap below — the old setTimeout focus hack and this component's own
+  // Escape branch are gone; ⌘K-to-open (a pre-existing shortcut, not part
+  // of this modal) stays on its own window-level listener.
+  const panelRef = useModalFocusTrap<HTMLDivElement>(open, () => setOpen(false));
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -28,15 +34,10 @@ export function GlobalSearch() {
         e.preventDefault();
         setOpen(true);
       }
-      if (e.key === "Escape") setOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [open]);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -69,11 +70,10 @@ export function GlobalSearch() {
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-24" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-xl rounded-card bg-card shadow-lg border border-border" onClick={(e) => e.stopPropagation()}>
+          <div ref={panelRef} className="w-full max-w-xl rounded-card bg-card shadow-lg border border-border" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
               <input
-                ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Cari client, matter, transaksi, invoice, description..."
@@ -119,7 +119,7 @@ export function GlobalSearch() {
                       />
                     ))}
                   </ResultGroup>
-                  <ResultGroup title="Cost Details">
+                  <ResultGroup title="Rincian Biaya">
                     {results.costDetails.map((c) => (
                       <ResultRow key={c.id} href={`/matters/${c.matterId}`} onSelect={() => setOpen(false)} label={c.description} sub={formatCurrency(c.amount)} />
                     ))}

@@ -1,5 +1,8 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { AuditEntityType } from "./enums";
+
+const ZERO = new Prisma.Decimal(0);
 
 // Implements Step 8 — Transaction Trace. Multi-entry (TRANSACTION / PAYMENT /
 // INVOICE / COST_DETAIL) per the validated finding that staff also trace
@@ -61,7 +64,11 @@ export async function buildTransactionTrace(transactionId: string) {
       matter: true,
       payment: { include: { allocations: { where: { status: "ACTIVE" }, include: { invoice: true } } } },
       deposit: true,
-      disbursement: true,
+      // Roadmap #3 — disbursement.bankAccountId persists but was never
+      // joined here, so Transaction Trace could never show the funding
+      // account (QA-found gap). Scalar fields still come along for free;
+      // this only adds the relation.
+      disbursement: { include: { bankAccount: true } },
       attachments: true,
     },
   });
@@ -73,6 +80,24 @@ export async function buildTransactionTrace(transactionId: string) {
   const costDetails = invoiceIds.length
     ? await prisma.costDetail.findMany({ where: { invoiceId: { in: invoiceIds } } })
     : [];
+
+  // P1.3: allocation rows need each invoice's Outstanding, not just the
+  // amount allocated from *this* transaction — that requires every active
+  // allocation across the invoice (not only this payment's), so it's one
+  // batched query over the small set of invoiceIds this transaction
+  // actually touches, not a per-row query.
+  const invoiceTotals = invoiceIds.length
+    ? await prisma.invoice.findMany({
+        where: { id: { in: invoiceIds } },
+        select: { id: true, totalAmount: true, allocations: { where: { status: "ACTIVE" }, select: { amount: true } } },
+      })
+    : [];
+  const invoiceOutstandingById = new Map(
+    invoiceTotals.map((inv) => {
+      const allocated = inv.allocations.reduce((a, x) => a.add(x.amount), ZERO);
+      return [inv.id, { totalAmount: inv.totalAmount, outstanding: inv.totalAmount.sub(allocated) }];
+    })
+  );
 
   const timeline = await buildTimeline(
     transactionId,
@@ -87,6 +112,7 @@ export async function buildTransactionTrace(transactionId: string) {
       amount: transaction.amount,
       direction: transaction.direction,
       description: transaction.description,
+      notes: transaction.notes,
     },
     // Node presence is conditional — absent nodes are simply omitted/null,
     // never fabricated. See Step 8 node table.
@@ -101,15 +127,18 @@ export async function buildTransactionTrace(transactionId: string) {
       classification:
         transaction.financialType === "UNCLASSIFIED"
           ? null
-          : { type: transaction.financialType, amount: transaction.amount },
+          : { type: transaction.financialType, amount: transaction.amount, paymentId: transaction.payment?.id ?? null },
       allocations: allocations.map((a) => ({
         allocationId: a.id,
         invoiceId: a.invoiceId,
         invoiceNumber: a.invoice?.invoiceNumber ?? null,
         allocationType: a.allocationType,
         amount: a.amount,
+        invoiceTotalAmount: a.invoiceId ? invoiceOutstandingById.get(a.invoiceId)?.totalAmount ?? null : null,
+        invoiceOutstanding: a.invoiceId ? invoiceOutstandingById.get(a.invoiceId)?.outstanding ?? null : null,
       })),
       costDetails,
+      deposit: transaction.deposit,
       disbursement: transaction.disbursement,
     },
     currentStatus: {

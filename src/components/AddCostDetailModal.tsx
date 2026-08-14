@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/apiClient";
 import { useToast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
-import { SOURCE_TYPES } from "@/lib/enums";
+import { Typeahead } from "@/components/ui/Typeahead";
+import { FieldHelp } from "@/components/ui/FieldHelp";
+import { useModalFocusTrap } from "@/components/ui/useModalFocusTrap";
+import { SOURCE_TYPES, matchCostCategorySuggestions } from "@/lib/enums";
+import { FIELD_HELP } from "@/lib/fieldHelp";
 
 export function AddCostDetailModal({ matterId }: { matterId: string }) {
   const [open, setOpen] = useState(false);
@@ -18,6 +22,7 @@ export function AddCostDetailModal({ matterId }: { matterId: string }) {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const toast = useToast();
+  const panelRef = useModalFocusTrap<HTMLFormElement>(open, () => setOpen(false));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,19 +46,34 @@ export function AddCostDetailModal({ matterId }: { matterId: string }) {
 
   return (
     <>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>+ Add Cost</Button>
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>+ Rincian Biaya</Button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(false)}>
-          <form onClick={(e) => e.stopPropagation()} onSubmit={submit} className="w-full max-w-md rounded-card bg-card p-6 shadow-lg border border-border">
-            <h2 className="mb-4 text-lg font-semibold text-text">Add Cost Detail</h2>
+          <form ref={panelRef} onClick={(e) => e.stopPropagation()} onSubmit={submit} className="w-full max-w-md rounded-card bg-card p-6 shadow-lg border border-border">
+            <h2 className="mb-4 text-lg font-semibold text-text">Tambah Rincian Biaya</h2>
             <label className="mb-1 block text-xs font-medium text-text">Description</label>
             <input required value={description} onChange={(e) => setDescription(e.target.value)} className="input mb-3" />
-            <label className="mb-1 block text-xs font-medium text-text">Category</label>
-            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="mis. PNBP, BPHTB, Honorarium" className="input mb-3" />
+            <label className="mb-1 block text-xs font-medium text-text" htmlFor="cost-category">Category</label>
+            <div className="mb-3">
+              <Typeahead
+                id="cost-category"
+                value={category}
+                onChange={setCategory}
+                options={matchCostCategorySuggestions(category).map((c) => ({ value: c, label: c }))}
+                onSelect={(opt) => setCategory(opt.value)}
+                placeholder="mis. PNBP, BPHTB, Honorarium (ketik bebas jika tidak ada di daftar)"
+                inputClassName="input"
+              />
+            </div>
             <div className="mb-3 grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-text">Amount</label>
-                <input required type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} className="input" />
+                <div className="relative">
+                  <input required type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} className="input pr-7" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <FieldHelp content={FIELD_HELP.costAmount} ariaLabel="Penjelasan Amount" />
+                  </span>
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-text">Date</label>

@@ -1,8 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { apiSuccess, withApiHandler, ApiError } from "@/lib/apiResponse";
 import { getCurrentUser } from "@/lib/currentUser";
-import { writeAuditLog } from "@/lib/audit";
 import { assertOneOf, FINANCIAL_TYPES, SOURCE_TYPES, TRANSACTION_DIRECTIONS } from "@/lib/enums";
+import {
+  assertFinancialTypeDirection,
+  createClassificationRecordTx,
+  createFinancialTransactionTx,
+  resolveInitialReviewStatus,
+} from "@/lib/financialTransactionActions";
 
 // GET /api/transactions — Collect/Link/Exception queues all read through
 // here with different filter combinations (Step 5/9/16).
@@ -45,6 +50,12 @@ export async function GET(request: Request) {
 
 // POST /api/transactions — Collect workflow (Step 5). client/matter are
 // optional by design: this must succeed with both null (UNLINKED).
+//
+// The insert + review-status computation now lives in
+// financialTransactionActions.ts so POST /api/payments/[id]/correct
+// (Roadmap #2) can create a corrected transaction through the exact same
+// path instead of a second, possibly-diverging implementation. This
+// route's own behavior/response is unchanged by that extraction.
 export async function POST(request: Request) {
   return withApiHandler(async () => {
     const userId = getCurrentUser(request);
@@ -57,6 +68,7 @@ export async function POST(request: Request) {
     }
     assertOneOf(direction, TRANSACTION_DIRECTIONS, "direction");
     if (financialType) assertOneOf(financialType, FINANCIAL_TYPES, "financialType");
+    if (financialType) assertFinancialTypeDirection(financialType, direction);
     const resolvedSourceType = sourceType ?? "SOURCE_PENDING";
     assertOneOf(resolvedSourceType, SOURCE_TYPES, "sourceType");
 
@@ -69,33 +81,32 @@ export async function POST(request: Request) {
       resolvedClientId = matter.clientId;
     }
 
-    const warnOnMissingSourceSetting = await prisma.systemSetting.findUnique({ where: { key: "warn_on_missing_source" } });
-    const warnOnMissingSource = (warnOnMissingSourceSetting?.value ?? "true") === "true";
-    const reviewStatus = resolvedSourceType === "SOURCE_PENDING" && warnOnMissingSource ? "WARNING" : "NORMAL";
+    const reviewStatus = await resolveInitialReviewStatus(resolvedSourceType);
+    const resolvedFinancialType = financialType ?? "UNCLASSIFIED";
 
     const transaction = await prisma.$transaction(async (tx) => {
-      const created = await tx.financialTransaction.create({
-        data: {
-          transactionDate: new Date(transactionDate),
-          amount,
-          direction,
-          description,
-          financialType: financialType ?? "UNCLASSIFIED",
-          clientId: resolvedClientId,
-          matterId: matterId ?? null,
-          sourceType: resolvedSourceType,
-          sourceReference: sourceReference ?? null,
-          reviewStatus,
-          notes: notes ?? null,
-          createdBy: userId,
-        },
-      });
-      await writeAuditLog(tx, {
-        entityType: "FINANCIAL_TRANSACTION",
-        entityId: created.id,
-        action: "CREATE",
+      const created = await createFinancialTransactionTx(tx, {
+        transactionDate: new Date(transactionDate),
+        amount,
+        direction,
+        description,
+        financialType: resolvedFinancialType,
+        clientId: resolvedClientId,
+        matterId: matterId ?? null,
+        sourceType: resolvedSourceType,
+        sourceReference: sourceReference ?? null,
+        notes: notes ?? null,
+        reviewStatus,
         userId,
-        newValue: created,
+      });
+      // Bug fix: financialType picked directly on the New Transaction form
+      // (rather than left UNCLASSIFIED and classified afterward) previously
+      // never got its backing Payment/Deposit/Disbursement row — see
+      // createClassificationRecordTx's comment in financialTransactionActions.ts.
+      await createClassificationRecordTx(tx, {
+        financialTransactionId: created.id,
+        financialType: resolvedFinancialType,
+        userId,
       });
       return created;
     });

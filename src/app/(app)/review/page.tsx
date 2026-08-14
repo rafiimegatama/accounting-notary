@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { UnlinkedReviewTable, ReviewRow } from "@/components/UnlinkedReviewTable";
+import { FieldHelp } from "@/components/ui/FieldHelp";
+import { FIELD_HELP } from "@/lib/fieldHelp";
 
 // Section 19 — Review Center. Deliberately NOT an error queue: only
 // WARNING/REVIEW_REQUIRED transactions appear here. UNLINKED-but-NORMAL
@@ -29,7 +31,9 @@ export default async function ReviewPage() {
     sourceReference: t.sourceReference,
     notes: t.notes,
     reviewStatus: t.reviewStatus as "WARNING" | "REVIEW_REQUIRED",
+    clientId: t.client?.id ?? null,
     clientName: t.client?.name ?? null,
+    matterId: t.matter?.id ?? null,
     matterName: t.matter?.matterName ?? null,
     reason: reasonByTxn.get(t.id) ?? null,
   }));
@@ -37,8 +41,16 @@ export default async function ReviewPage() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h1 className="text-xl font-semibold text-text">Review Center</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold text-text">
+          <span>Review Center</span>
+          {/* Single, one-time explanation of Review Status (P1 item #12) —
+              here on the page heading, not on every row's badge. */}
+          <FieldHelp content={FIELD_HELP.reviewStatus} ariaLabel="Penjelasan Review Status" />
+        </h1>
         <p className="text-sm text-muted">Items yang membutuhkan perhatian. Status ini advisory — tidak memblokir link, alokasi, atau workflow apapun.</p>
+        <a href="/guide#trace" className="mt-1 inline-block text-xs font-medium text-primary hover:underline">
+          Bingung kenapa satu transaksi muncul di sini? Lihat cara menelusurinya di Panduan &rarr;
+        </a>
       </div>
       <UnlinkedReviewTable rows={rows} />
     </div>

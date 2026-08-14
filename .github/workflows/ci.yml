@@ -1,0 +1,101 @@
+name: CI
+
+# Code-quality gate only — does NOT touch deployment. This project's
+# deployment model stays manual/on-prem Docker Compose on the office server
+# (CLAUDE.md §6, docs/DEPLOYMENT.md) on purpose; this workflow never builds
+# or pushes an image anywhere, it only proves the checkout would pass the
+# same checks every session in this repo has been running by hand
+# (lint/typecheck/test/build) before this existed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Matches the `db` service's actual version (docker-compose.yml,
+    # postgres:16-alpine) so migrations/tests run against the same major
+    # version production does — the v31 pg_dump-version mismatch is a
+    # reminder of what silently drifts when versions aren't kept in sync.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: notary_app
+          POSTGRES_PASSWORD: ci_test_password
+          POSTGRES_DB: notary_financial_control_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U notary_app -d notary_financial_control_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://notary_app:ci_test_password@localhost:5432/notary_financial_control_test?schema=public
+      SESSION_SECRET: ci-only-placeholder-secret-never-used-outside-this-workflow
+      COOKIE_SECURE: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - run: npx prisma migrate deploy
+
+      # vitest.setup.ts does `process.loadEnvFile(".env.test")` unconditionally
+      # (see scripts/reset-test-db.sh's local equivalent) — that file is
+      # gitignored on purpose (never a real secret locally), so CI writes its
+      # own disposable copy pointed at the service container above. Values
+      # match the job `env:` block above exactly, so it doesn't matter which
+      # one Node's loadEnvFile treats as authoritative.
+      - name: Write .env.test for the CI Postgres service
+        run: |
+          cat > .env.test <<'EOF'
+          DATABASE_URL="postgresql://notary_app:ci_test_password@localhost:5432/notary_financial_control_test?schema=public"
+          SESSION_SECRET="ci-only-placeholder-secret-never-used-outside-this-workflow"
+          COOKIE_SECURE="false"
+          EOF
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Full suite (unit + tests/scenarios) against the real Postgres service
+      # above — NOT `npm test`, which runs scripts/reset-test-db.sh's
+      # `docker compose exec -T db ...` pretest hook. That assumes an actual
+      # docker-compose stack, which doesn't exist here (this job uses a plain
+      # GitHub Actions service container instead) — the service container is
+      # already a fresh, empty database per run, so the drop/recreate dance
+      # reset-test-db.sh does for a reused local Postgres isn't needed.
+      - name: Test
+        run: npx vitest run
+
+      # Also proves next build succeeds with a real, reachable DB (unlike an
+      # ad hoc local build with no Postgres running, where a few pages log
+      # harmless-but-noisy Prisma connection errors before falling back to
+      # dynamic rendering) — the Postgres service is still up at this point.
+      - name: Build
+        run: npm run build
+
+  docker-build:
+    runs-on: ubuntu-latest
+    # Separate job, no DB needed: proves the Dockerfile itself still builds
+    # end to end (all 4 stages) on a clean checkout — this is the layer that
+    # actually broke in production before (v5's missing OpenSSL, v31's
+    # `npm install` vs `npm ci` lockfile drift), and neither `next build`
+    # nor `npx tsc` above would have caught either one.
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag notary-accounting-ci-build .

@@ -50,3 +50,24 @@ table {
   outline: none;
   border-color: var(--color-primary);
 }
+.input:focus-visible {
+  border-color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Cetak Laporan (Print Report) — Client/Matter Financial Position pages.
+   Element-level hide/show for the report itself lives as Tailwind
+   `print:` utility classes in FinancialPositionView.tsx/AppShellClient.tsx;
+   this is just page setup that has no Tailwind utility equivalent. */
+@page {
+  margin: 1.5cm;
+}
+
+@media print {
+  /* Avoid a table header/first data row being split across a page break —
+     low-effort, not full pagination control. */
+  tr {
+    break-inside: avoid;
+  }
+}

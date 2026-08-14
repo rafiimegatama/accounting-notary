@@ -1,12 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { formatCurrency, formatDate } from "@/lib/formatCurrency";
 import { Card, CardBody } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { LinkStatusBadge, ReviewStatusBadge } from "@/components/ui/StatusBadge";
-import { FINANCIAL_TYPES } from "@/lib/enums";
+import { TransactionsTable } from "@/components/TransactionsTable";
+import { UploadIcon } from "@/components/UploadDocumentModal";
+import { FINANCIAL_TYPES, SOURCE_TYPES } from "@/lib/enums";
 
 interface Filters {
-  dateFrom?: string; dateTo?: string; direction?: string; linked?: string; reviewStatus?: string; financialType?: string;
+  dateFrom?: string; dateTo?: string; direction?: string; linked?: string; reviewStatus?: string; financialType?: string; sourceType?: string;
 }
 
 export default async function TransactionsPage({ searchParams }: { searchParams: Filters }) {
@@ -14,6 +14,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   if (searchParams.direction) where.direction = searchParams.direction;
   if (searchParams.reviewStatus) where.reviewStatus = searchParams.reviewStatus;
   if (searchParams.financialType) where.financialType = searchParams.financialType;
+  if (searchParams.sourceType) where.sourceType = searchParams.sourceType;
   if (searchParams.linked === "unlinked") { where.clientId = null; where.matterId = null; }
   if (searchParams.linked === "linked") { where.OR = [{ clientId: { not: null } }, { matterId: { not: null } }]; }
   if (searchParams.dateFrom || searchParams.dateTo) {
@@ -27,14 +28,23 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     where,
     orderBy: { transactionDate: "desc" },
     take: 150,
-    include: { client: { select: { name: true } }, matter: { select: { matterName: true } } },
+    include: { client: { select: { id: true, name: true } }, matter: { select: { id: true, matterName: true } } },
   });
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-semibold text-text">Financial Transactions</h1>
-        <p className="text-sm text-muted">Menampilkan 150 transaksi terbaru sesuai filter. Gunakan Search (⌘K) untuk mencari transaksi spesifik.</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-text">Financial Transactions</h1>
+          <p className="text-sm text-muted">Menampilkan 150 transaksi terbaru sesuai filter. Gunakan Search (⌘K) untuk mencari transaksi spesifik.</p>
+        </div>
+        <a
+          href="/transactions/import"
+          className="inline-flex items-center gap-1.5 rounded-control bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
+        >
+          <UploadIcon />
+          Import Excel
+        </a>
       </div>
 
       <form action="/transactions" method="get" className="flex flex-wrap items-end gap-3 rounded-card border border-border bg-card p-4">
@@ -61,6 +71,12 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
             {FINANCIAL_TYPES.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </FilterField>
+        <FilterField label="Source Type">
+          <select name="sourceType" defaultValue={searchParams.sourceType ?? ""} className="input">
+            <option value="">Semua</option>
+            {SOURCE_TYPES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </FilterField>
         <button type="submit" className="rounded-control bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark">Filter</button>
         <a href="/transactions" className="rounded-control border border-border px-4 py-2 text-sm hover:bg-bg">Reset</a>
       </form>
@@ -70,42 +86,23 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
           {transactions.length === 0 ? (
             <EmptyState title="Belum ada transaksi" description="Tambahkan transaksi pertama untuk mulai mencatat aktivitas finansial." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs font-medium text-muted">
-                    <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3">Transaction ID</th>
-                    <th className="px-5 py-3">Direction</th>
-                    <th className="px-5 py-3 text-right">Amount</th>
-                    <th className="px-5 py-3">Description</th>
-                    <th className="px-5 py-3">Client</th>
-                    <th className="px-5 py-3">Matter</th>
-                    <th className="px-5 py-3">Type</th>
-                    <th className="px-5 py-3">Link Status</th>
-                    <th className="px-5 py-3">Review</th>
-                    <th className="px-5 py-3">Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((t) => (
-                    <tr key={t.id} className="border-b border-border last:border-0 hover:bg-bg">
-                      <td className="px-5 py-3 whitespace-nowrap">{formatDate(t.transactionDate)}</td>
-                      <td className="px-5 py-3 font-mono text-xs text-muted">{t.id.slice(0, 8)}</td>
-                      <td className="px-5 py-3">{t.direction}</td>
-                      <td className="px-5 py-3 text-right">{formatCurrency(t.amount)}</td>
-                      <td className="px-5 py-3"><a href={`/transactions/${t.id}`} className="font-medium text-text hover:text-primary">{t.description}</a></td>
-                      <td className="px-5 py-3 text-muted">{t.client?.name ?? "-"}</td>
-                      <td className="px-5 py-3 text-muted">{t.matter?.matterName ?? "-"}</td>
-                      <td className="px-5 py-3 text-muted">{t.financialType}</td>
-                      <td className="px-5 py-3"><LinkStatusBadge status={!t.clientId ? "UNLINKED" : !t.matterId ? "LINKED_TO_CLIENT" : "LINKED_TO_MATTER"} /></td>
-                      <td className="px-5 py-3"><ReviewStatusBadge status={t.reviewStatus as "NORMAL" | "WARNING" | "REVIEW_REQUIRED"} /></td>
-                      <td className="px-5 py-3 text-muted">{t.sourceType}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TransactionsTable
+              rows={transactions.map((t) => ({
+                id: t.id,
+                transactionDate: t.transactionDate,
+                direction: t.direction,
+                amount: t.amount,
+                description: t.description,
+                clientId: t.client?.id ?? null,
+                clientName: t.client?.name ?? null,
+                matterId: t.matter?.id ?? null,
+                matterName: t.matter?.matterName ?? null,
+                financialType: t.financialType,
+                linkStatus: !t.clientId ? "UNLINKED" : !t.matterId ? "LINKED_TO_CLIENT" : "LINKED_TO_MATTER",
+                reviewStatus: t.reviewStatus as "NORMAL" | "WARNING" | "REVIEW_REQUIRED",
+                sourceType: t.sourceType,
+              }))}
+            />
           )}
         </CardBody>
       </Card>

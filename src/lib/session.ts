@@ -14,6 +14,15 @@ function secret(): string {
   return s;
 }
 
+// Defaults to false (current behavior, plain-HTTP LAN access still works)
+// so this must be opted into explicitly once a TLS front door (see
+// docs/DEPLOYMENT.md, Caddy) is verified reachable — flipping it before
+// then silently drops the cookie on every plain-HTTP request and locks
+// staff out of login.
+export function cookieSecure(): boolean {
+  return process.env.COOKIE_SECURE === "true";
+}
+
 export interface SessionPayload {
   staffId: string;
   staffName: string;

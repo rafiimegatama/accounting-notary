@@ -1,0 +1,32 @@
+# LAN-only TLS front door — see docs/DEPLOYMENT.md "TLS for LAN Access".
+#
+# `tls internal` makes Caddy generate and use its own local Certificate
+# Authority (stored in the `caddy_data` volume, persists across restarts)
+# instead of requesting a public cert — appropriate here since staff reach
+# this by the server's LAN IP, not a public domain, and the office has no
+# internet-facing surface to run ACME/Let's Encrypt against in the first
+# place (CLAUDE.md's on-prem/LAN-only deployment model).
+#
+# `:443` matches any Host header, so this works whether staff type the
+# server's IP or a LAN hostname — no need to hardcode either one here.
+#
+# This is a NEW, additional front door. The app's existing plain-HTTP
+# port 3000 (docker-compose.yml, `app` service) is untouched by this file
+# and keeps working exactly as before — that's what the temporary ngrok
+# tunnel (docs/DEPLOYMENT.md §7) points at, and it stays that way.
+:443 {
+	# `on_demand` is required here (not just `tls internal`) because this
+	# block has no fixed hostname — staff may reach it by IP or by a LAN
+	# hostname, so Caddy can't pre-issue a cert at startup the way it would
+	# for a literal `example.com:443` block. Without `on_demand`, Caddy has
+	# no certificate to offer for an unrecognized SNI/IP and the handshake
+	# fails outright (TLS alert: internal_error) — found and confirmed live
+	# via a real handshake attempt, not just a syntax check. Safe to leave
+	# unrestricted here (no `ask`/allowlist) since this is LAN-only, not
+	# internet-facing — there's no outside party who could abuse on-demand
+	# issuance to exhaust resources.
+	tls internal {
+		on_demand
+	}
+	reverse_proxy app:3000
+}

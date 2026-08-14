@@ -54,8 +54,26 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
         <Stat label="Partial Payment" value={invoice.allowPartialPayment ? "Diizinkan" : "Tidak diizinkan"} />
       </div>
 
+      {/* Phase 3.2: partial payment is only ever explained, never labeled
+          an "error" outright — NORMAL when the invoice itself allows it,
+          REVIEW_REQUIRED (via the transaction's own review status) when it
+          doesn't. Same allowPartialPayment flag the backend already uses
+          in recomputeReviewStatus, not a new rule invented in the UI. */}
+      {paymentStatus === "PARTIALLY_PAID" && (
+        <p className="-mt-3 text-xs text-muted">
+          {invoice.allowPartialPayment
+            ? "Partial payment diizinkan untuk invoice ini — status transaksi terkait tetap Normal."
+            : "Invoice ini tidak mengizinkan partial payment — transaksi pembayaran terkait akan ditandai Review Required sampai dialokasikan penuh atau invoice diperbarui."}
+        </p>
+      )}
+      {paymentStatus === "OVERPAID" && (
+        <p className="-mt-3 text-xs text-danger">
+          Alokasi melebihi total invoice — transaksi pembayaran terkait akan ditandai Review Required.
+        </p>
+      )}
+
       <Card>
-        <CardHeader><h2 className="text-sm font-semibold text-text">Cost Details</h2></CardHeader>
+        <CardHeader><h2 className="text-sm font-semibold text-text">Rincian Biaya</h2></CardHeader>
         <CardBody className="p-0">
           {costDetails.length === 0 ? (
             <EmptyState title="Belum ada cost detail yang ditagih di invoice ini" />
@@ -103,7 +121,7 @@ export default async function InvoiceDetailPage({ params }: { params: { id: stri
         <CardBody>
           {attachments.length === 0 ? <EmptyState title="Belum ada dokumen terlampir" /> : (
             <ul className="space-y-2 text-sm">
-              {attachments.map((a) => <li key={a.id}>{a.fileName} <span className="text-xs text-muted">({formatDate(a.uploadedAt)})</span></li>)}
+              {attachments.map((a) => <li key={a.id}><a href={`/api/attachments/${a.id}`} className="text-primary hover:underline">{a.fileName}</a> <span className="text-xs text-muted">({formatDate(a.uploadedAt)})</span></li>)}
             </ul>
           )}
         </CardBody>

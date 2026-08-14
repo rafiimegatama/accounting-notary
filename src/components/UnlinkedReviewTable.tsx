@@ -9,6 +9,7 @@ import { ReviewStatusBadge } from "@/components/ui/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LinkDrawer } from "@/components/LinkDrawer";
 import { SOURCE_TYPES } from "@/lib/enums";
+import { suggestedActionForReason } from "@/lib/exceptionExplain";
 
 export interface ReviewRow {
   id: string;
@@ -19,7 +20,9 @@ export interface ReviewRow {
   sourceReference: string | null;
   notes: string | null;
   reviewStatus: "WARNING" | "REVIEW_REQUIRED";
+  clientId: string | null;
   clientName: string | null;
+  matterId: string | null;
   matterName: string | null;
   reason: string | null;
 }
@@ -85,7 +88,12 @@ function RowWithPanel({ row, expanded, onToggle }: { row: ReviewRow; expanded: b
         <td className="px-5 py-3">{row.description}</td>
         <td className="px-5 py-3 text-muted">{row.clientName ?? "Unlinked"}{row.matterName ? ` / ${row.matterName}` : ""}</td>
         <td className="px-5 py-3 text-right">{formatCurrency(row.amount)}</td>
-        <td className="px-5 py-3 text-muted">{row.reason ?? "-"}</td>
+        <td className="px-5 py-3 text-muted">
+          <div>{row.reason ?? "-"}</div>
+          {suggestedActionForReason(row.reason) && (
+            <div className="mt-0.5 text-xs text-primary">Aksi: {suggestedActionForReason(row.reason)}</div>
+          )}
+        </td>
         <td className="px-5 py-3"><ReviewStatusBadge status={row.reviewStatus} /></td>
         <td className="px-5 py-3 whitespace-nowrap">
           <a href={`/transactions/${row.id}`} className="mr-3 text-primary hover:underline">Open</a>
@@ -125,7 +133,13 @@ function ActionPanel({ row }: { row: ReviewRow }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <LinkDrawer transactionId={row.id} currentClientName={row.clientName} />
+        <LinkDrawer
+          transactionId={row.id}
+          currentClientName={row.clientName}
+          currentMatterName={row.matterName}
+          currentClientId={row.clientId}
+          currentMatterId={row.matterId}
+        />
       </div>
 
       <div>

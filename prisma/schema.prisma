@@ -100,7 +100,12 @@ model CostDetail {
   updatedAt       DateTime @default(now()) @map("updated_at")
 
   matter      Matter                @relation(fields: [matterId], references: [id])
-  invoice     Invoice?              @relation(fields: [invoiceId], references: [id])
+  // Restrict, not the Prisma-default SetNull for an optional relation: an
+  // invoice must not silently detach from a cost detail that references
+  // it — matches ddl_notary_financial_control.sql's documented intent
+  // (previously undeclared here, so migrations actually applied SetNull;
+  // see prisma/migrations/20260814180000_fix_ondelete_restrict).
+  invoice     Invoice?              @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   attachments FinancialAttachment[]
 
   @@index([matterId, status])
@@ -129,8 +134,10 @@ model FinancialTransaction {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @default(now()) @map("updated_at")
 
-  client      Client?               @relation(fields: [clientId], references: [id])
-  matter      Matter?               @relation(fields: [matterId], references: [id])
+  // Restrict — see cost_detail.invoice comment above for why (same
+  // undeclared-onDelete drift, same fix, same migration).
+  client      Client?               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  matter      Matter?               @relation(fields: [matterId], references: [id], onDelete: Restrict)
   payment     Payment?
   deposit     Deposit?
   disbursement Disbursement?
@@ -173,14 +180,38 @@ model Disbursement {
   id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   financialTransactionId String   @unique @map("financial_transaction_id") @db.Uuid
   category               String?
+  bankAccountId          String?  @map("bank_account_id") @db.Uuid
   notes                  String?
   createdBy              String   @map("created_by")
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @default(now()) @map("updated_at")
 
   transaction FinancialTransaction @relation(fields: [financialTransactionId], references: [id])
+  bankAccount BankAccount?         @relation(fields: [bankAccountId], references: [id])
 
   @@map("disbursement")
+}
+
+// Structured per-bank disbursement categorization (Roadmap #3). Records which
+// funding bank/account paid out a Disbursement, additive to (not a replacement
+// for) the existing free-text `category` (what the money was spent on). No
+// prevent_delete() trigger — same convention as Client/Matter; protection
+// against removing a referenced account comes from the FK (ON DELETE RESTRICT
+// in the DDL, see ddl_notary_financial_control.sql) instead.
+model BankAccount {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bankName      String   @map("bank_name")
+  accountName   String?  @map("account_name")
+  accountNumber String?  @map("account_number")
+  status        String   @default("ACTIVE") // ACTIVE | INACTIVE
+  notes         String?
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  disbursements Disbursement[]
+
+  @@map("bank_account")
 }
 
 model PaymentAllocation {
@@ -198,7 +229,8 @@ model PaymentAllocation {
   createdAt       DateTime  @default(now()) @map("created_at")
 
   payment Payment  @relation(fields: [paymentId], references: [id])
-  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  // Restrict — same fix as cost_detail.invoice above.
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
   @@index([invoiceId, status])
   @@index([paymentId, status])
@@ -218,12 +250,25 @@ model FinancialAttachment {
   uploadedBy    String   @map("uploaded_by")
   uploadedAt    DateTime @default(now()) @map("uploaded_at")
 
-  client      Client?               @relation(fields: [clientId], references: [id])
-  matter      Matter?               @relation(fields: [matterId], references: [id])
-  transaction FinancialTransaction? @relation(fields: [transactionId], references: [id])
-  costDetail  CostDetail?           @relation(fields: [costDetailId], references: [id])
-  invoice     Invoice?              @relation(fields: [invoiceId], references: [id])
+  // Restrict on all five — same fix as cost_detail.invoice above: an
+  // attachment must not silently detach from the record it documents.
+  client      Client?               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  matter      Matter?               @relation(fields: [matterId], references: [id], onDelete: Restrict)
+  transaction FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  costDetail  CostDetail?           @relation(fields: [costDetailId], references: [id], onDelete: Restrict)
+  invoice     Invoice?              @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
+  // idx_attach_transaction/matter/client/cost_detail/invoice all exist in
+  // the database (prisma/migrations/20260810150100_constraints_and_triggers,
+  // matching ddl_notary_financial_control.sql) as PARTIAL indexes
+  // (`WHERE x_id IS NOT NULL`). Deliberately not declared as `@@index`
+  // here: Prisma's schema DSL has no partial/filtered-index syntax as of
+  // this project's pinned version (5.20), so a plain `@@index([transactionId])`
+  // would describe a *different*, non-partial index than what's actually
+  // in the database — `prisma migrate dev` run against that mismatch could
+  // try to drop the smaller partial index and create a larger full one.
+  // Leaving this undeclared-but-documented is the accurate state, not an
+  // oversight.
   @@map("financial_attachment")
 }
 

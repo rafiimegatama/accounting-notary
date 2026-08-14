@@ -4,6 +4,8 @@
 // exist purely so application code gets compile-time checking instead
 // of stringly-typed values scattered around route handlers.
 
+import { ApiError } from "./apiResponse";
+
 export const SOURCE_TYPES = [
   "INTERNAL_SYSTEM", "EXCEL", "BANK_STATEMENT", "WORD", "WHATSAPP",
   "PDF", "IMAGE", "MANUAL", "OTHER", "SOURCE_PENDING",
@@ -37,6 +39,7 @@ export type AllocationStatus = (typeof ALLOCATION_STATUSES)[number];
 export const AUDIT_ENTITY_TYPES = [
   "CLIENT", "MATTER", "FINANCIAL_TRANSACTION", "COST_DETAIL", "INVOICE",
   "PAYMENT", "PAYMENT_ALLOCATION", "DEPOSIT", "DISBURSEMENT", "FINANCIAL_ATTACHMENT",
+  "BANK_ACCOUNT",
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
@@ -46,7 +49,27 @@ export const AUDIT_ACTIONS = [
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-import { ApiError } from "./apiResponse";
+// Unlike the arrays above, this is NOT a DB-enforced enum — cost_detail.category
+// stays free text on purpose (per CLAUDE.md §3, source formats/taxonomy aren't
+// validated yet). This is only a deterministic, advisory typeahead vocabulary
+// to cut down on repetitive typing/typos for the categories staff use most —
+// see docs/ROADMAP.md "predefined value autocomplete." Staff can always type a
+// value that isn't in this list; extend it here as real usage reveals more
+// common categories, don't build a master-data admin screen for it.
+export const COST_CATEGORY_SUGGESTIONS = [
+  "BPHTB", "PNBP", "Honorarium", "Materai", "Pengecekan Sertifikat",
+  "Pajak", "Biaya Administrasi", "Lainnya",
+] as const;
+
+// Prefix match, case-insensitive — deliberately simple (no fuzzy/substring
+// matching) so suggestions stay predictable: "BP" only ever suggests things
+// that start with "BP", never a coincidental substring match elsewhere in
+// the word.
+export function matchCostCategorySuggestions(query: string): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return COST_CATEGORY_SUGGESTIONS.filter((c) => c.toLowerCase().startsWith(q));
+}
 
 export function assertOneOf<T extends readonly string[]>(
   value: string,
