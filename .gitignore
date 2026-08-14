@@ -1,9 +1,20 @@
 node_modules
 .next
+# Leftover partial `next build` output from a manual verification run, and
+# TypeScript's incremental build cache — both regenerate on demand, neither
+# belongs in history (found untracked-but-not-ignored during a repo hygiene
+# review, see CHANGELOG.md).
+.next-verify/
+tsconfig.tsbuildinfo
 .env
 .env.local
 .env.test
 .env.test.local
 attachments
+backups/
 *.log
+# Exported Caddy local-CA cert (docs/DEPLOYMENT.md §10) — regenerated per
+# deployment whenever caddy_data is fresh; not a secret (it's a public root
+# cert) but specific to one instance's CA, so not tracked.
+office-root-ca.crt
 .DS_Store
