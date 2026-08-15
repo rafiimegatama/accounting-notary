@@ -331,9 +331,27 @@ export function FinancialPositionView(props: FinancialPositionViewProps) {
             <SummaryStat label="Total Payment" value={summary.totalPayment} href="#payments" explain={paymentExplain} />
             <SummaryStat label="Outstanding" value={summary.outstanding} href={costInvoiceHref ?? "#invoices"} explain={outstandingExplain} />
             <SummaryStat label="Unallocated" value={summary.unallocatedAmount} href="#payments" explain={unallocatedExplain} />
-            <SummaryStat label="Deposit Received" value={summary.depositReceived} href="#deposits" explain={depositReceivedExplain} />
-            <SummaryStat label="Deposit Used" value={summary.depositUsed} href="#disbursements" help={FIELD_HELP.depositUsed} explain={depositUsedExplain} />
-            <SummaryStat label="Deposit Remaining" value={summary.depositRemaining} href="#deposits" explain={depositRemainingExplain} />
+            {/* Deposit Used is every Disbursement-classified transaction for
+                this matter, not scoped to money drawn from an actual
+                deposit (position.ts: depositUsed === disbursementTotal,
+                same number). Showing "Deposit Remaining" for a matter that
+                never had a deposit produces a confusing negative number
+                (Received 0 − Used X = −X) that reads like the client owes
+                deposit money back, when nothing like that happened — found
+                from a real accountant's (Tami) UAT questions. Same
+                depositReceived>0 threshold already used to hide this block
+                in Lite Mode below; the disbursement total itself remains
+                visible either way in the Disbursement card further down.
+                Deliberately hides all three (Received/Used/Remaining)
+                together, not just Remaining — Used's label is only
+                accurate in the context of an actual deposit existing. */}
+            {Number(summary.depositReceived.toString()) > 0 && (
+              <>
+                <SummaryStat label="Deposit Received" value={summary.depositReceived} href="#deposits" explain={depositReceivedExplain} />
+                <SummaryStat label="Deposit Used" value={summary.depositUsed} href="#disbursements" help={FIELD_HELP.depositUsed} explain={depositUsedExplain} />
+                <SummaryStat label="Deposit Remaining" value={summary.depositRemaining} href="#deposits" explain={depositRemainingExplain} />
+              </>
+            )}
           </div>
         </>
       )}
@@ -357,7 +375,11 @@ export function FinancialPositionView(props: FinancialPositionViewProps) {
                     <td className="px-5 py-2.5"><a href={props.linkHref("matter", m.matterId)} className="font-medium text-text hover:text-primary">{m.matterName}</a></td>
                     <td className="px-5 py-2.5"><GenericStatusBadge status={m.status} /></td>
                     <td className="px-5 py-2.5 text-right">{formatCurrency(m.summary.outstanding)}</td>
-                    <td className="px-5 py-2.5 text-right">{formatCurrency(m.summary.depositRemaining)}</td>
+                    {/* "—" (not a misleading negative number) when this matter never had a
+                        deposit — see the KPI-tile comment above for why. */}
+                    <td className="px-5 py-2.5 text-right">
+                      {Number(m.summary.depositReceived.toString()) > 0 ? formatCurrency(m.summary.depositRemaining) : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -488,7 +510,9 @@ export function FinancialPositionView(props: FinancialPositionViewProps) {
         <CardHeader>
           <h2 className="text-sm font-semibold text-text">Deposit / Funds</h2>
           <p className="mt-0.5 text-xs text-muted">
-            Received {formatCurrency(summary.depositReceived)} · Used {formatCurrency(summary.depositUsed)} · Remaining {formatCurrency(summary.depositRemaining)}
+            {Number(summary.depositReceived.toString()) > 0
+              ? `Received ${formatCurrency(summary.depositReceived)} · Used ${formatCurrency(summary.depositUsed)} · Remaining ${formatCurrency(summary.depositRemaining)}`
+              : "Belum ada deposit tercatat untuk ini — Deposit hanya dipakai kalau dana memang diperlakukan sebagai titipan client."}
           </p>
         </CardHeader>
         <CardBody className="p-0">
@@ -516,7 +540,14 @@ export function FinancialPositionView(props: FinancialPositionViewProps) {
       </Card>
 
       <Card id="disbursements">
-        <CardHeader><h2 className="text-sm font-semibold text-text">Disbursement</h2></CardHeader>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-text">Disbursement</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Pencatatan di sini bersifat opsional dan tidak wajib sama nilainya dengan Rincian Biaya — sistem tidak
+            menghitung otomatis selisih antara keduanya sebagai pendapatan/margin, ini murni catatan uang yang
+            benar-benar keluar.
+          </p>
+        </CardHeader>
         <CardBody className="p-0">
           {props.disbursements.length === 0 ? (
             <EmptyState title="Belum ada disbursement" />

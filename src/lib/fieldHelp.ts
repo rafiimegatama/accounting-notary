@@ -21,7 +21,7 @@ export const FIELD_HELP = {
   deposit:
     "Gunakan untuk dana yang memang diterima sebagai titipan client untuk keperluan tertentu. Jangan gunakan hanya karena transaksi berkaitan dengan PNBP atau BPHTB.",
   depositUsed:
-    "Jumlah dana deposit yang benar-benar digunakan untuk keperluan yang terkait dengan deposit tersebut.",
+    "Total seluruh transaksi yang diklasifikasikan Disbursement untuk matter ini — bukan hanya dana yang diambil dari deposit yang diterima. Matter tanpa deposit sekalipun bisa punya angka ini kalau ada disbursement tercatat.",
   invoiceTotal: "Total nilai yang dibebankan kepada client melalui invoice ini.",
   paymentAmount:
     "Jumlah uang yang diterima pada transaksi payment ini. Pengalokasian ke invoice dicatat secara terpisah.",

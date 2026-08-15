@@ -9,6 +9,160 @@ two in sync when adding an entry (add here first, then mirror a one-line summary
 
 ## [Unreleased]
 
+## [v42] - 2026-08-15
+
+### Fixed — Misleading negative "Deposit Remaining" found from real accountant (Tami) UAT feedback
+
+Tami, mid-UAT, asked a cluster of questions about Disbursement: is recording it mandatory, does its
+amount have to match Rincian Biaya, and does the system auto-calculate income minus expenses.
+Investigated the actual code (not just re-explained the existing answer) and found the real, concrete
+cause of her confusion rather than just a documentation gap.
+
+**Root cause**: `position.ts`'s `depositUsed` is literally aliased to `disbursementTotal` — the sum of
+every Disbursement-classified transaction for a matter, regardless of whether that matter ever had an
+actual deposit. `FinancialPositionView.tsx`'s Advanced mode showed "Deposit Received / Used /
+Remaining" **unconditionally**, so any matter with real disbursements but no formal deposit/titipan
+displayed `Deposit Remaining: −Rp [disbursement total]` — a confusing negative number implying the
+client owes deposit money back, when nothing like that happened. The `depositUsed` FieldHelp tooltip
+made it worse: it claimed the figure was "funds used for that deposit's purpose," describing a scoped
+relationship the code doesn't actually implement. Lite Mode already got the correct fix for this back
+in v12 (hide the deposit line entirely when `depositReceived = 0`) — Advanced mode was deliberately
+left unchanged at the time; Tami's fresh feedback was the evidence needed to revisit that call.
+
+**Fixed in 4 places, same root cause, `src/components/FinancialPositionView.tsx`**:
+- Advanced-mode KPI tiles — Deposit Received/Used/Remaining now only render as a group when
+  `depositReceived > 0`, matching Lite Mode's existing threshold. The disbursement total itself
+  remains visible regardless, in the Disbursement card further down — nothing is hidden, just no
+  longer duplicated under a misleading label.
+- "Per Matter" client-level breakdown table — shows "—" instead of a misleading negative
+  `Deposit Remaining` for any matter without a deposit.
+- "Deposit / Funds" card subtitle — no longer states a `Remaining` figure when there's no deposit;
+  now reads "Belum ada deposit tercatat... Deposit hanya dipakai kalau dana memang diperlakukan
+  sebagai titipan client" instead.
+- `src/lib/fieldHelp.ts`'s `depositUsed` copy corrected to describe what the code actually computes
+  (all disbursements, not scoped to a specific deposit).
+
+**Added**: an explicit subtitle on the Disbursement card directly answering her actual questions —
+recording is optional, doesn't need to match Rincian Biaya, and the system never auto-calculates the
+difference as income/margin (that was already explicitly deferred with Tami once before, v12).
+
+0 schema/API/business-logic change — `position.ts`'s formulas are untouched, this is purely about not
+displaying a number where it's misleading. 129/129 unit tests pass (no logic changed, so no new test
+needed for this pass), `tsc`/`lint`/`next build` all clean. Same honest limitation as this project's
+established pattern since v13/v14: no browser tooling in this environment, so the actual rendered
+appearance (not just that it compiles) hasn't been visually confirmed — recommend a quick look at a
+real no-deposit matter's Financial Position page before/after to confirm it reads as intended.
+
+## [v41] - 2026-08-15
+
+### Fixed / Added — Corrected admin target name + break-glass PIN reset script
+
+Follow-up to v40, same day. Two things from a clarifying exchange with the user:
+
+**Correction**: v40's migration bootstrapped `isAdmin` for **"Pani"** — turned out Pani is a regular
+staff member, not the intended admin. The intended admin is **Irfani Utami**, a different person.
+Since the migration had not been applied to any persistent database (only disposable, already-
+destroyed test containers used to verify it during v40), the migration file itself was corrected in
+place (`WHERE name = 'Irfani Utami'`) rather than shipping a second corrective migration — no
+real environment had the wrong value applied.
+
+**Added `scripts/break-glass-reset-pin.sh`**: closes the single-point-of-failure question the user
+asked directly — "what if Irfani forgets her own PIN?" With exactly one admin (`isAdmin=true`)
+matching the "restricted to one trusted person for now" decision, nobody could use the in-app reset
+(Settings > Staf Aktif) if that one account is ever locked out, since using it requires already being
+logged in as an admin. This script is the documented last resort: requires direct server/Docker
+access (intentionally unreachable from the web app — the whole reason SMTP-based recovery was
+declined in the first place was to avoid a self-service path reachable by anyone who can reach the
+login page), generates a new PIN, and hashes it with the *exact* algorithm the app itself uses
+(`scrypt`, `src/lib/session.ts`'s `hashPin()` — same salt/hash parameters) so the result is
+guaranteed to actually verify at login, not just resemble a valid hash. Confirms exactly one ACTIVE
+staff member matches the given name before touching anything (refuses to silently no-op on a typo
+or touch multiple rows on a name collision) and writes a `STAFF`/`PIN_RESET` audit entry attributed
+to `break-glass-script`, same as an in-app reset.
+
+**Real bug found and fixed during verification**: the first draft used `psql -c "UPDATE ... :'var' ..."`
+for safe variable interpolation — direct testing showed this **fails with a syntax error**. `psql`'s
+`:'var'` substitution into SQL text only applies when psql reads a *script* (stdin or `-f`), not in
+`-c`'s command-string mode (backslash meta-commands like `\echo :var` still work in `-c`, plain SQL
+does not) — a real, non-obvious psql quirk, not a typo. Fixed by piping via stdin heredocs instead,
+matching the pattern `scripts/migrate.sh`/`scripts/restore-drill.sh` already use for
+`docker compose exec -T db`. Re-verified against a disposable, freshly-migrated Postgres container:
+the corrected UPDATE and audit-log INSERT both succeed, and — specifically testing the edge case the
+fix targets — a staff name containing an apostrophe (`O'Brien Test`) round-trips correctly through
+the match-count guard, which had also been quietly relying on unescaped bash string interpolation
+before this fix.
+
+**Verified live, not just typechecked**: the PIN-generation snippet's output was checked against the
+app's real `verifyPin()` (via `tsx`, not a reimplementation) — confirmed byte-for-byte compatible
+(correct PIN verifies, wrong PIN rejected). The corrected migration was re-applied to a disposable
+Postgres from scratch. Full suite re-run after the migration correction: 182/182 pass, `tsc`/`lint`
+clean. **Not verified**: an actual `docker compose exec app/db` run of the finished script against a
+real Compose-orchestrated stack — this session's actual project stack is currently live (serving the
+in-progress UAT tunnel), and spinning up a second stack from the same `docker-compose.yml` would
+collide on host ports (3000, 5432) and the `notary-accounting-app:latest` image tag. Every piece the
+script depends on was verified in isolation instead (the hash algorithm against the real
+`verifyPin()`, the exact SQL against a disposable DB) — recorded here as an explicit, honest gap
+rather than an implied full end-to-end pass. Run it once, deliberately, during a safe maintenance
+window before trusting it in a real emergency.
+
+## [v40] - 2026-08-15
+
+### Added — Admin-restricted PIN reset ("forgot PIN" painkiller, without SMTP or full RBAC)
+
+Follow-up to a "should we add SMTP for forgot-PIN?" analysis this session (Solution Analyst + UI/UX
+lens): declined SMTP — `Staff` has no email field at all, it would be the app's first outbound
+internet dependency for an auth-critical flow (contradicts the "software LOCAL" principle throughout
+`CLAUDE.md`/`docs/PROJECT_RULES.md`), and login is a staff-picker, not an email/username form, so
+"check your email" doesn't map onto the existing UX. Recommended an in-app, admin-assisted reset
+instead. Follow-up question ("does this mean full RBAC?") was also explicitly declined — a full
+role/permission engine (superadmin/admin/user tiers) contradicts `CLAUDE.md §4`'s "complex approval
+workflow engine" non-goal and the Staff model's own documented design ("not a permission/role
+system"). Landed on the smallest option that solves the actual problem: **one boolean flag gating
+one action**, not a role system — confirmed explicitly restricted to one named person (office
+manager) per this decision.
+
+**Schema** (`prisma/schema.prisma`, migration `20260815090000_add_staff_admin_and_pin_reset`):
+`Staff.isAdmin` (`is_admin`, default `false`) — the model's own header comment updated to spell out
+that this is "the one deliberate, narrow exception," checked nowhere else in the app. Migration also
+widens `audit_log`'s `chk_audit_entity_type`/`chk_audit_action` CHECK constraints to allow
+`STAFF`/`PIN_RESET` (exact drop/re-add pattern as `20260812155645_add_bank_account`, additive only,
+every existing row still satisfies the new constraint) and bootstraps the grant for the one named
+staff member requested (no-op in any environment without that exact name — e.g. CI's ephemeral DB).
+
+**Backend**: `src/lib/staffActions.ts` (new) — `generateRandomPin()` (6-digit, `node:crypto`'s
+`randomInt`, not `Math.random()`), `assertIsAdmin()` (looked up fresh against the DB on every call,
+never trusted from the session cookie — same principle as `requireSession()`/`getCurrentUser()`
+elsewhere), and `resetStaffPinTx()` (hash + update + audit-log write, all in one `tx`, plus clears
+any active login-lockout window for the target — "forgot PIN" and "locked out from wrong guesses"
+usually happen together). New route `POST /api/staff/[id]/reset-pin` returns the new plaintext PIN
+exactly once in the response body for the admin to relay directly — never stored or logged in
+plaintext anywhere else.
+
+**Frontend**: `src/components/StaffList.tsx` (new) replaces the old static name-only list in
+Settings > Staf Aktif — shows an "Admin" badge, and (only for a viewer whose own account is admin,
+UX convenience only, not the security boundary) a "Reset PIN" button per staff row opening a
+two-step confirm → one-time-reveal modal, same structural pattern as `BackupRecoveryActions.tsx`.
+
+**Test harness change**: `tests/helpers/callApi.ts` previously signed every test session with one
+fixed `TEST_STAFF_ID`, which can't test admin-vs-non-admin authorization (this route looks up the
+*acting* staff's DB row, not just session presence). Added an optional `staffId` override,
+defaulting to the old fixed ID — fully backward compatible, confirmed by running the full suite
+(all 182 tests, including the pre-existing 48-test `masterPromptScenarios.test.ts`) unchanged.
+
+**Verified live, not just typechecked**: new migration applied cleanly to a disposable, freshly
+migrated Postgres container; the bootstrap grant confirmed correct (only the named staff member
+ends up `is_admin=true`); the widened CHECK constraints confirmed to accept `STAFF`/`PIN_RESET`
+*and* still reject a genuinely invalid value (not accidentally opened wide). New scenario test
+(`tests/scenarios/staffPinReset.test.ts`, 5 tests, real DB + real route handler, not raw SQL):
+non-admin → 403, unauthenticated → 401, nonexistent target → 404, admin reset → old PIN provably
+stops verifying and new PIN provably verifies (`verifyPin()`), and the audit entry is attributed
+to the acting admin's name. Full suite: 182/182 pass. `tsc --noEmit`, `next lint`, and `next build`
+all clean.
+
+Not built (explicitly out of scope for this task): self-service "change my own PIN" while already
+logged in — a different feature (proactive rotation) than the "locked-out, can't self-serve" problem
+this solves; deferred rather than scope-crept in.
+
 ## [v39] - 2026-08-14
 
 ### Added — Remaining 3 DevOps findings: git-SHA image tagging/rollback, pre-migration snapshot, capacity tracking
