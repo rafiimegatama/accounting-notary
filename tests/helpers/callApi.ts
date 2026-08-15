@@ -20,6 +20,7 @@ export async function call(
     params?: Record<string, string>;
     query?: Record<string, string>;
     staffName?: string | null;
+    staffId?: string;
     unauthenticated?: boolean;
   } = {}
 ) {
@@ -27,8 +28,9 @@ export async function call(
   if (opts.query) for (const [k, v] of Object.entries(opts.query)) url.searchParams.set(k, v);
 
   const staffName = opts.staffName === undefined ? "Test Staff" : opts.staffName;
+  const staffId = opts.staffId ?? TEST_STAFF_ID;
   const cookie =
-    !opts.unauthenticated && staffName ? `${COOKIE_NAME}=${createSessionCookieValue(TEST_STAFF_ID, staffName)}` : undefined;
+    !opts.unauthenticated && staffName ? `${COOKIE_NAME}=${createSessionCookieValue(staffId, staffName)}` : undefined;
 
   const req = new Request(url, {
     method: opts.method ?? "GET",

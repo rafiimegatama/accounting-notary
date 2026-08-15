@@ -319,12 +319,12 @@ CREATE TABLE audit_log (
   entity_type      TEXT NOT NULL CHECK (entity_type IN (
                       'CLIENT','MATTER','FINANCIAL_TRANSACTION','COST_DETAIL','INVOICE',
                       'PAYMENT','PAYMENT_ALLOCATION','DEPOSIT','DISBURSEMENT','FINANCIAL_ATTACHMENT',
-                      'BANK_ACCOUNT'
+                      'BANK_ACCOUNT','STAFF'
                     )),
   entity_id        UUID NOT NULL,
   action           TEXT NOT NULL CHECK (action IN (
                       'CREATE','UPDATE','LINK','RELINK','UNLINK','ALLOCATE',
-                      'REVERSE_ALLOCATION','STATUS_CHANGE','ATTACH','VOID','ADJUSTMENT'
+                      'REVERSE_ALLOCATION','STATUS_CHANGE','ATTACH','VOID','ADJUSTMENT','PIN_RESET'
                     )),
   user_id          TEXT NOT NULL,
   occurred_at      TIMESTAMPTZ NOT NULL DEFAULT now(),

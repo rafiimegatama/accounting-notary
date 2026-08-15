@@ -6,6 +6,7 @@ import { getBrandingSettings } from "@/lib/brandingServer";
 import { getBackupStatus } from "@/lib/backupStatus";
 import { BrandingSettingsForm } from "@/components/BrandingSettingsForm";
 import { BackupRecoverySettings } from "@/components/BackupRecoverySettings";
+import { StaffList } from "@/components/StaffList";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 
 // Exception-rule defaults stay read-only — changing them is rare enough
@@ -17,9 +18,10 @@ import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 // BrandingSettingsForm / /api/settings/branding for the guardrails.
 export default async function SettingsPage() {
   const session = requireSession();
-  const [settings, staff, branding, backupStatus] = await Promise.all([
+  const [settings, staff, viewer, branding, backupStatus] = await Promise.all([
     prisma.systemSetting.findMany({ where: { key: { notIn: BRANDING_KEYS } }, orderBy: { key: "asc" } }),
-    prisma.staff.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    prisma.staff.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" }, select: { id: true, name: true, isAdmin: true } }),
+    prisma.staff.findUnique({ where: { id: session.staffId }, select: { isAdmin: true } }),
     getBrandingSettings(),
     getBackupStatus(),
   ]);
@@ -60,11 +62,16 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader><h2 className="text-sm font-semibold text-text">Staf Aktif</h2></CardHeader>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-text">Staf Aktif</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            {viewer?.isAdmin
+              ? "Sebagai admin, Anda dapat mereset PIN staf lain yang lupa PIN-nya."
+              : "Lupa PIN? Hubungi salah satu admin di atas untuk direset."}
+          </p>
+        </CardHeader>
         <CardBody>
-          <ul className="space-y-1 text-sm">
-            {staff.map((s) => <li key={s.id}>{s.name}</li>)}
-          </ul>
+          <StaffList staff={staff} viewerIsAdmin={viewer?.isAdmin ?? false} />
         </CardBody>
       </Card>
 

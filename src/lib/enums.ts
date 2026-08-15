@@ -39,13 +39,13 @@ export type AllocationStatus = (typeof ALLOCATION_STATUSES)[number];
 export const AUDIT_ENTITY_TYPES = [
   "CLIENT", "MATTER", "FINANCIAL_TRANSACTION", "COST_DETAIL", "INVOICE",
   "PAYMENT", "PAYMENT_ALLOCATION", "DEPOSIT", "DISBURSEMENT", "FINANCIAL_ATTACHMENT",
-  "BANK_ACCOUNT",
+  "BANK_ACCOUNT", "STAFF",
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 export const AUDIT_ACTIONS = [
   "CREATE", "UPDATE", "LINK", "RELINK", "UNLINK", "ALLOCATE",
-  "REVERSE_ALLOCATION", "STATUS_CHANGE", "ATTACH", "VOID", "ADJUSTMENT",
+  "REVERSE_ALLOCATION", "STATUS_CHANGE", "ATTACH", "VOID", "ADJUSTMENT", "PIN_RESET",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
