@@ -10,7 +10,14 @@ tsconfig.tsbuildinfo
 .env.local
 .env.test
 .env.test.local
-attachments
+# Anchored to repo root (leading /) — an unanchored `attachments` pattern
+# matches at ANY depth, which was silently excluding the real, tracked
+# src/app/api/attachments/ route from git entirely since the file was
+# created (confirmed via `git log --all -- src/app/api/attachments/`
+# returning nothing, and reproducing the resulting CI build/typecheck
+# failure in an isolated worktree — see CHANGELOG.md). This line is only
+# meant to exclude the runtime upload-storage folder at repo root.
+/attachments
 backups/
 *.log
 # Exported Caddy local-CA cert (docs/DEPLOYMENT.md §10) — regenerated per
